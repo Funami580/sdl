@@ -106,7 +106,7 @@ async fn do_after_chrome_driver(
     let debug = args.debug;
     let extractor = args.extractor.as_ref();
     let url = args.url.deref();
-    let max_concurrent = args.concurrent_downloads;
+    let max_concurrent = args.concurrent_downloads.inner().copied();
 
     let ffmpeg_path = match ffmpeg_install_result {
         Ok(path) => path,

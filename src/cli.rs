@@ -34,11 +34,11 @@ pub(crate) struct Args {
 
     /// Concurrent downloads
     #[arg(short = 'N', long, value_parser = parse_optional_with_inf_as_none::<NonZeroU32>, default_value = "5")]
-    pub(crate) concurrent_downloads: Option<NonZeroU32>,
+    pub(crate) concurrent_downloads: OptionWrapper<NonZeroU32>,
 
     /// Amount of episodes to extract before waiting
     #[arg(long, value_parser = parse_optional_with_never_as_none::<NonZeroU32>, default_value = "4")]
-    pub(crate) ddos_wait_episodes: Option<NonZeroU32>,
+    pub(crate) ddos_wait_episodes: OptionWrapper<NonZeroU32>,
 
     /// The duration in milliseconds to wait
     #[arg(long, default_value_t = 60 * 1000)]
@@ -76,7 +76,7 @@ impl Args {
         let wait_fn = move || wait_duration;
 
         DownloadSettings {
-            ddos_wait_episodes: self.ddos_wait_episodes,
+            ddos_wait_episodes: self.ddos_wait_episodes.inner().copied(),
             ddos_wait_time: wait_fn,
         }
     }
@@ -110,6 +110,15 @@ impl Display for SimpleRanges {
 pub(crate) enum Extractor {
     Auto,
     Name(String),
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct OptionWrapper<T>(Option<T>);
+
+impl<T> OptionWrapper<T> {
+    pub(crate) fn inner(&self) -> Option<&T> {
+        self.0.as_ref()
+    }
 }
 
 fn parse_ranges(input: &str) -> Result<SimpleRanges, String> {
@@ -175,25 +184,28 @@ fn parse_extractor(input: &str) -> Result<Extractor, String> {
     }
 }
 
-fn parse_optional_with_none<T: FromStr>(input: &str, none_value: &'static str) -> Result<Option<T>, String>
+fn parse_optional_with_none<T: FromStr>(input: &str, none_value: &'static str) -> Result<OptionWrapper<T>, String>
 where
     T::Err: Display,
 {
     if input.eq_ignore_ascii_case(none_value) {
-        Ok(None)
+        Ok(OptionWrapper(None))
     } else {
-        input.parse::<T>().map(Some).map_err(|err| format!("{err}"))
+        input
+            .parse::<T>()
+            .map(|value| OptionWrapper(Some(value)))
+            .map_err(|err| format!("{err}"))
     }
 }
 
-fn parse_optional_with_inf_as_none<T: FromStr>(input: &str) -> Result<Option<T>, String>
+fn parse_optional_with_inf_as_none<T: FromStr>(input: &str) -> Result<OptionWrapper<T>, String>
 where
     T::Err: Display,
 {
     parse_optional_with_none(input, "inf")
 }
 
-fn parse_optional_with_never_as_none<T: FromStr>(input: &str) -> Result<Option<T>, String>
+fn parse_optional_with_never_as_none<T: FromStr>(input: &str) -> Result<OptionWrapper<T>, String>
 where
     T::Err: Display,
 {
