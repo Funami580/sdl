@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use clap::{Parser, ValueEnum};
 
-use crate::downloaders::{DownloadSettings, EpisodesRequest, Language, VideoType};
+use crate::downloaders::{AllOrSpecific, DownloadSettings, EpisodesRequest, Language, VideoType};
 
 #[derive(Parser, Debug)]
 #[command(version)]
@@ -21,11 +21,11 @@ pub(crate) struct Args {
     pub(crate) language: Language,
 
     /// Only download specific episodes
-    #[arg(short, long, value_parser = parse_ranges, default_value_t = SimpleRanges::All, hide_default_value = true)]
+    #[arg(short, long, value_parser = parse_ranges, default_value_t = SimpleRanges::Unspecified, hide_default_value = true)]
     pub(crate) episodes: SimpleRanges,
 
     /// Only download specific seasons
-    #[arg(short, long, value_parser = parse_ranges, default_value_t = SimpleRanges::All, hide_default_value = true, conflicts_with_all = ["episodes"])]
+    #[arg(short, long, value_parser = parse_ranges, default_value_t = SimpleRanges::Unspecified, hide_default_value = true, conflicts_with_all = ["episodes"])]
     pub(crate) seasons: SimpleRanges,
 
     /// Use underlying extractors directly
@@ -64,10 +64,21 @@ impl Args {
 
     pub(crate) fn get_episodes_request(self) -> EpisodesRequest {
         match (self.episodes, self.seasons) {
-            (SimpleRanges::All, SimpleRanges::All) => EpisodesRequest::All,
-            (SimpleRanges::Custom(episodes), SimpleRanges::All) => EpisodesRequest::Episodes(episodes),
-            (SimpleRanges::All, SimpleRanges::Custom(seasons)) => EpisodesRequest::Seasons(seasons),
-            (SimpleRanges::Custom(_), SimpleRanges::Custom(_)) => unreachable!(),
+            (SimpleRanges::Unspecified, SimpleRanges::Unspecified) => EpisodesRequest::Unspecified,
+            (SimpleRanges::Custom(episodes), SimpleRanges::Unspecified) => {
+                EpisodesRequest::Episodes(AllOrSpecific::Specific(episodes))
+            }
+            (SimpleRanges::Unspecified, SimpleRanges::Custom(seasons)) => {
+                EpisodesRequest::Seasons(AllOrSpecific::Specific(seasons))
+            }
+            (SimpleRanges::All, SimpleRanges::Unspecified) => EpisodesRequest::Episodes(AllOrSpecific::All),
+            (SimpleRanges::Unspecified, SimpleRanges::All) => EpisodesRequest::Seasons(AllOrSpecific::All),
+            (SimpleRanges::All, SimpleRanges::All) | (SimpleRanges::Custom(_), SimpleRanges::Custom(_)) => {
+                unreachable!()
+            }
+            (SimpleRanges::All, SimpleRanges::Custom(_)) | (SimpleRanges::Custom(_), SimpleRanges::All) => {
+                unreachable!()
+            }
         }
     }
 
@@ -93,6 +104,7 @@ pub(crate) enum SimpleVideoType {
 
 #[derive(Debug, Clone)]
 pub(crate) enum SimpleRanges {
+    Unspecified,
     All,
     Custom(Vec<RangeInclusive<u32>>),
 }
@@ -100,29 +112,19 @@ pub(crate) enum SimpleRanges {
 impl Display for SimpleRanges {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            SimpleRanges::Unspecified => write!(f, "Unspecified"),
             SimpleRanges::All => write!(f, "All"),
             SimpleRanges::Custom(_) => write!(f, "Custom"),
         }
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum Extractor {
-    Auto,
-    Name(String),
-}
-
-#[derive(Debug, Clone)]
-pub(crate) struct OptionWrapper<T>(Option<T>);
-
-impl<T> OptionWrapper<T> {
-    pub(crate) fn inner(&self) -> Option<&T> {
-        self.0.as_ref()
-    }
-}
-
 fn parse_ranges(input: &str) -> Result<SimpleRanges, String> {
     const BEFORE_LAST: u32 = u32::MAX - 1;
+
+    if input.eq_ignore_ascii_case("unspecified") {
+        return Ok(SimpleRanges::Unspecified);
+    }
 
     if input.eq_ignore_ascii_case("all") {
         return Ok(SimpleRanges::All);
@@ -176,11 +178,26 @@ fn parse_ranges(input: &str) -> Result<SimpleRanges, String> {
     Ok(SimpleRanges::Custom(merged_ranges))
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum Extractor {
+    Auto,
+    Name(String),
+}
+
 fn parse_extractor(input: &str) -> Result<Extractor, String> {
     if input.eq_ignore_ascii_case("auto") {
         Ok(Extractor::Auto)
     } else {
         Ok(Extractor::Name(input.to_owned()))
+    }
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct OptionWrapper<T>(Option<T>);
+
+impl<T> OptionWrapper<T> {
+    pub(crate) fn inner(&self) -> Option<&T> {
+        self.0.as_ref()
     }
 }
 

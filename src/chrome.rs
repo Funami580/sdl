@@ -27,8 +27,9 @@ impl<'a> ChromeDriver<'a> {
 
     async fn chrome_driver(&self, headless: bool) -> Result<thirtyfour::WebDriver, anyhow::Error> {
         // Launch ChromeDriver
-        let chromedriver_path =
-            Self::get_chromedriver_path().with_context(|| "failed to find or fetch ChromeDriver")?;
+        let chromedriver_path = Self::get_chromedriver_path()
+            .await
+            .with_context(|| "failed to find or fetch ChromeDriver")?;
 
         let Some(port) = portpicker::pick_unused_port() else {
             anyhow::bail!("no free port found for ChromeDriver");
@@ -134,10 +135,13 @@ impl<'a> ChromeDriver<'a> {
         Ok(driver)
     }
 
-    fn get_chromedriver_path() -> Option<PathBuf> {
+    async fn get_chromedriver_path() -> Option<PathBuf> {
         match selenium_manager::chrome::ChromeManager::new() {
-            Ok(mut manager) => match manager.setup() {
-                Ok(driver_path) => return Some(driver_path),
+            Ok(mut manager) => match tokio::task::spawn_blocking(move || manager.setup()).await {
+                Ok(result) => match result {
+                    Ok(driver_path) => return Some(driver_path),
+                    Err(err) => log::debug!("Failed to set up ChromeDriver: {}", err),
+                },
                 Err(err) => log::debug!("Failed to set up ChromeDriver: {}", err),
             },
             Err(err) => log::debug!("Failed to create Chrome Manager: {}", err),
