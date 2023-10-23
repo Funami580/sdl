@@ -4,13 +4,12 @@ use std::path::PathBuf;
 
 use chrono::Local;
 use clap::Parser;
-
-use crate::cli::Args;
-use crate::download::{DownloadManager, Downloader, InternalDownloadTask};
-use crate::downloaders::{DownloadRequest, InstantiatedDownloader};
-use crate::extractors::extract_video_url;
-use crate::ffmpeg::Ffmpeg;
-use crate::logger::log_wrapper::{LogWrapper, SetLogWrapper};
+use cli::{Args, Extractor};
+use download::{DownloadManager, Downloader, InternalDownloadTask};
+use downloaders::{DownloadRequest, InstantiatedDownloader};
+use extractors::{extract_video_url, extract_video_url_with_extractor};
+use ffmpeg::Ffmpeg;
+use logger::log_wrapper::{LogWrapper, SetLogWrapper};
 
 pub(crate) mod chrome;
 pub(crate) mod cli;
@@ -26,7 +25,7 @@ async fn main() {
     // Parse arguments
     let args = cli::Args::parse();
     let debug = args.debug;
-    let extractor = args.extractor;
+    let extractor = args.extractor.as_ref();
 
     // Set up logger
     let logger = logger::default_logger(debug);
@@ -54,7 +53,7 @@ async fn main() {
     let asset_downloader = Downloader::new(&mut log_wrapper, debug, None, None);
     let ffmpeg = Ffmpeg::new(data_dir.clone());
 
-    let (mut chrome, ffmpeg_install_result) = if !extractor {
+    let (mut chrome, ffmpeg_install_result) = if extractor.is_none() {
         let (chrome, ffmpeg_install_result) = tokio::join!(
             chrome::ChromeDriver::get(&data_dir, &asset_downloader, !debug),
             ffmpeg.auto_download(&asset_downloader),
@@ -105,7 +104,7 @@ async fn do_after_chrome_driver(
     args: Args,
 ) -> bool {
     let debug = args.debug;
-    let extractor = args.extractor;
+    let extractor = args.extractor.as_ref();
     let url = args.url.deref();
     let max_concurrent = args.concurrent_downloads;
 
@@ -126,45 +125,25 @@ async fn do_after_chrome_driver(
     };
     let episodes_downloader = Downloader::new(&mut log_wrapper, debug, Some(ffmpeg_path), user_agent);
 
-    if !extractor {
-        let Some(series_downloader) = downloaders::find_downloader_for_url(chrome.unwrap(), url).await else {
-            log::error!("Failed to find a downloader for the url: {}", url);
-            return true;
+    if let Some(extractor) = extractor {
+        let extractor_result = if let Extractor::Name(extractor_name) = extractor {
+            extract_video_url_with_extractor(url, extractor_name, None).await
+        } else {
+            extract_video_url(url, None).await
         };
 
-        let series_info = match series_downloader.get_series_info().await {
-            Ok(info) => info,
-            Err(err) => {
-                log::error!("Failed to get series info: {:#}", err);
-                return true;
-            }
-        };
-
-        let (download_manager, sender) =
-            DownloadManager::new(episodes_downloader, max_concurrent, save_directory, series_info);
-        let download_request = DownloadRequest {
-            language: args.get_video_type(),
-            episodes: args.get_episodes_request(),
-        };
-
-        let (downloader_result, _) = tokio::join!(
-            series_downloader.download(download_request, sender),
-            download_manager.progress_downloads(),
-        );
-
-        if let Err(err) = downloader_result {
-            log::error!("Failed to download series: {:#}", err);
-            return true;
-        }
-    } else {
-        let extracted_video = match extract_video_url(url, None).await {
+        let extracted_video = match extractor_result {
             Some(Ok(video_url)) => video_url,
             Some(Err(err)) => {
                 log::error!("Failed to extract video url: {:#}", err);
                 return true;
             }
             None => {
-                log::error!("Failed to find an extractor for the url: {}", url);
+                if let Extractor::Name(extractor_name) = extractor {
+                    log::error!("Failed to find an extractor named: {}", extractor_name);
+                } else {
+                    log::error!("Failed to find an extractor for the url: {}", url);
+                }
                 return true;
             }
         };
@@ -199,6 +178,37 @@ async fn do_after_chrome_driver(
 
         if let Err(err) = download_result {
             log::error!("Failed download: {:#}", err);
+            return true;
+        }
+    } else {
+        let Some(series_downloader) = downloaders::find_downloader_for_url(chrome.unwrap(), url).await else {
+            log::error!("Failed to find a downloader for the url: {}", url);
+            return true;
+        };
+
+        let download_settings = args.get_download_settings();
+        let series_info = match series_downloader.get_series_info().await {
+            Ok(info) => info,
+            Err(err) => {
+                log::error!("Failed to get series info: {:#}", err);
+                return true;
+            }
+        };
+
+        let (download_manager, sender) =
+            DownloadManager::new(episodes_downloader, max_concurrent, save_directory, series_info);
+        let download_request = DownloadRequest {
+            language: args.get_video_type(),
+            episodes: args.get_episodes_request(),
+        };
+
+        let (downloader_result, _) = tokio::join!(
+            series_downloader.download(download_request, &download_settings, sender),
+            download_manager.progress_downloads(),
+        );
+
+        if let Err(err) = downloader_result {
+            log::error!("Failed to download series: {:#}", err);
             return true;
         }
     }

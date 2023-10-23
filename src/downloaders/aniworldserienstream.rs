@@ -1,4 +1,9 @@
-use super::InstantiatedDownloader;
+use std::time::Duration;
+
+use once_cell::sync::Lazy;
+use regex::Regex;
+
+use super::{DownloadSettings, InstantiatedDownloader};
 use crate::downloaders::Downloader;
 
 pub struct AniWorldSerienStream<'driver> {
@@ -12,7 +17,11 @@ impl<'driver> Downloader<'driver> for AniWorldSerienStream<'driver> {
     }
 
     async fn supports_url(url: &str) -> bool {
-        todo!()
+        static SUPPORTS_URL_REGEX: Lazy<Regex> = Lazy::new(|| {
+            Regex::new(r#"(?i)^https?://(?:www\.)?(?:aniworld\.to/anime|s\.to/serie)/stream(?:/[^/\s]+){1,3}$"#)
+                .unwrap()
+        });
+        SUPPORTS_URL_REGEX.is_match(url)
     }
 }
 
@@ -21,11 +30,37 @@ impl InstantiatedDownloader for AniWorldSerienStream<'_> {
         todo!()
     }
 
-    async fn download(
+    async fn download<F: FnMut() -> Duration>(
         &self,
         request: super::DownloadRequest,
+        settings: &DownloadSettings<F>,
         sender: tokio::sync::mpsc::UnboundedSender<super::DownloadTask>,
     ) -> Result<(), anyhow::Error> {
         todo!()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::AniWorldSerienStream;
+    use crate::downloaders::Downloader;
+
+    #[tokio::test]
+    async fn test_supports_url() {
+        let is_supported = [
+            "https://aniworld.to/anime/stream/detektiv-conan",
+            "https://aniworld.to/anime/stream/mushoku-tensei-jobless-reincarnation/staffel-1",
+            "https://aniworld.to/anime/stream/mushoku-tensei-jobless-reincarnation/filme",
+            "https://aniworld.to/anime/stream/detektiv-conan/staffel-18/episode-2",
+            "http://www.aniworld.to/anime/stream/mushoku-tensei-jobless-reincarnation/filme",
+            "https://s.to/serie/stream/detektiv-conan",
+            "https://s.to/serie/stream/detektiv-conan/filme",
+            "https://s.to/serie/stream/detektiv-conan/staffel-5",
+            "https://s.to/serie/stream/detektiv-conan/staffel-1/episode-1",
+        ];
+
+        for url in is_supported {
+            assert!(AniWorldSerienStream::supports_url(url).await);
+        }
     }
 }

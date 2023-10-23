@@ -1,5 +1,7 @@
 use std::fmt::Display;
+use std::num::NonZeroU32;
 use std::ops::{Deref, RangeInclusive};
+use std::time::Duration;
 
 use clap::ValueEnum;
 use enum_dispatch::enum_dispatch;
@@ -28,7 +30,7 @@ macro_rules! enum_dispatch {
 }
 
 macro_rules! find_downloader_for_url {
-    ($driver:expr, $url:expr, $dl:ty $(, $tail:ty)* $(,)?) => {
+    ($driver:expr, $url:expr, $dl:ident $(, $tail:ident)* $(,)?) => {
         if <$dl>::supports_url($url).await {
             Some(DispatchDownloader::from(<$dl>::new($driver, $url.to_owned())))
         } else {
@@ -40,18 +42,27 @@ macro_rules! find_downloader_for_url {
     };
 }
 
-enum_dispatch! {
-    pub enum DispatchDownloader<'a>: InstantiatedDownloader {
-        Aniwave<'a>,
-        AniWorldSerienStream<'a>,
-    }
+macro_rules! create_functions_for_extractors {
+    ($( $dl:ident ),* $(,)?) => {
+        enum_dispatch! {
+            pub enum DispatchDownloader<'a>: InstantiatedDownloader {
+                $($dl<'a>),*
+            }
+        }
+
+        pub async fn find_downloader_for_url<'driver>(
+            driver: &'driver mut thirtyfour::WebDriver,
+            url: &str,
+        ) -> Option<DispatchDownloader<'driver>> {
+            find_downloader_for_url!(driver, url, $($dl),*)
+        }
+    };
+    () => {};
 }
 
-pub async fn find_downloader_for_url<'driver>(
-    driver: &'driver mut thirtyfour::WebDriver,
-    url: &str,
-) -> Option<DispatchDownloader<'driver>> {
-    find_downloader_for_url!(driver, url, Aniwave, AniWorldSerienStream,)
+create_functions_for_extractors! {
+    Aniwave,
+    AniWorldSerienStream,
 }
 
 #[derive(Debug, Clone)]
@@ -141,6 +152,12 @@ pub enum EpisodesRequest {
 }
 
 #[derive(Debug, Clone)]
+pub struct DownloadSettings<F: FnMut() -> Duration> {
+    pub ddos_wait_episodes: Option<NonZeroU32>,
+    pub ddos_wait_time: F,
+}
+
+#[derive(Debug, Clone)]
 pub struct DownloadTask {
     pub episode_info: EpisodeInfo,
     pub language: VideoType,
@@ -177,9 +194,10 @@ pub enum EpisodeNumber {
 pub trait InstantiatedDownloader {
     async fn get_series_info(&self) -> Result<SeriesInfo, anyhow::Error>;
 
-    async fn download(
+    async fn download<F: FnMut() -> Duration>(
         &self,
         request: DownloadRequest,
+        settings: &DownloadSettings<F>,
         sender: UnboundedSender<DownloadTask>,
     ) -> Result<(), anyhow::Error>;
 }

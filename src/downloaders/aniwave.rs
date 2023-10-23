@@ -1,4 +1,6 @@
-use super::InstantiatedDownloader;
+use std::time::Duration;
+
+use super::{DownloadSettings, InstantiatedDownloader};
 use crate::downloaders::Downloader;
 
 pub struct Aniwave<'driver> {
@@ -21,9 +23,10 @@ impl InstantiatedDownloader for Aniwave<'_> {
         todo!()
     }
 
-    async fn download(
+    async fn download<F: FnMut() -> Duration>(
         &self,
         request: super::DownloadRequest,
+        settings: &DownloadSettings<F>,
         sender: tokio::sync::mpsc::UnboundedSender<super::DownloadTask>,
     ) -> Result<(), anyhow::Error> {
         todo!()

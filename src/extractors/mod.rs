@@ -10,6 +10,52 @@ pub mod streamtape;
 pub mod vidoza;
 pub mod voe;
 
+macro_rules! extract_video_url {
+    ($url:expr, $user_agent:expr, $ext:ty $(, $tail:ty)* $(,)?) => {
+        if <$ext>::supports_url($url).await.unwrap_or(false) {
+            Some(<$ext>::extract_video_url(ExtractFrom::Url { url: $url.to_owned(), user_agent: $user_agent }).await)
+        } else {
+            extract_video_url!($url, $user_agent, $($tail),*)
+        }
+    };
+    ($url:expr, $user_agent:expr $(,)?) => {
+        None
+    };
+}
+
+macro_rules! extract_video_url_with_extractor {
+    ($url:expr, $extractor:expr, $user_agent:expr, $ext:ty $(, $tail:ty)* $(,)?) => {
+        if $extractor.eq_ignore_ascii_case(stringify!($ext)) {
+            Some(<$ext>::extract_video_url(ExtractFrom::Url { url: $url.to_owned(), user_agent: $user_agent }).await)
+        } else {
+            extract_video_url_with_extractor!($url, $extractor, $user_agent, $($tail),*)
+        }
+    };
+    ($url:expr, $extractor:expr, $user_agent:expr $(,)?) => {
+        None
+    };
+}
+
+macro_rules! create_functions_for_extractors {
+    ($( $ext:ty ),* $(,)?) => {
+        pub async fn extract_video_url(url: &str, user_agent: Option<String>) -> Option<Result<ExtractedVideo, anyhow::Error>> {
+            extract_video_url!(url, user_agent, $($ext),*)
+        }
+
+        pub async fn extract_video_url_with_extractor(url: &str, extractor: &str, user_agent: Option<String>) -> Option<Result<ExtractedVideo, anyhow::Error>> {
+            extract_video_url_with_extractor!(url, extractor, user_agent, $($ext),*)
+        }
+    };
+    () => {};
+}
+
+create_functions_for_extractors! {
+    Filemoon,
+    Streamtape,
+    Vidoza,
+    Voe,
+}
+
 #[derive(Debug, Clone)]
 pub enum ExtractFrom {
     Url { url: String, user_agent: Option<String> },
@@ -35,23 +81,6 @@ pub trait Extractor {
     async fn supports_url(url: &str) -> Option<bool>;
 
     async fn extract_video_url(from: ExtractFrom) -> Result<ExtractedVideo, anyhow::Error>;
-}
-
-macro_rules! extract_video_url {
-    ($url:expr, $user_agent:expr, $ext:ty $(, $tail:ty)* $(,)?) => {
-        if <$ext>::supports_url($url).await.unwrap_or(false) {
-            Some(<$ext>::extract_video_url(ExtractFrom::Url { url: $url.to_owned(), user_agent: $user_agent }).await)
-        } else {
-            extract_video_url!($url, $user_agent, $($tail),*)
-        }
-    };
-    ($url:expr, $user_agent:expr $(,)?) => {
-        None
-    };
-}
-
-pub async fn extract_video_url(url: &str, user_agent: Option<String>) -> Option<Result<ExtractedVideo, anyhow::Error>> {
-    extract_video_url!(url, user_agent, Filemoon, Streamtape, Vidoza, Voe)
 }
 
 pub mod utils {

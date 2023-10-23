@@ -1,10 +1,12 @@
 use std::fmt::Display;
 use std::num::NonZeroU32;
 use std::ops::RangeInclusive;
+use std::str::FromStr;
+use std::time::Duration;
 
 use clap::{Parser, ValueEnum};
 
-use crate::downloaders::{EpisodesRequest, Language, VideoType};
+use crate::downloaders::{DownloadSettings, EpisodesRequest, Language, VideoType};
 
 #[derive(Parser, Debug)]
 #[command(version)]
@@ -27,12 +29,20 @@ pub(crate) struct Args {
     pub(crate) seasons: SimpleRanges,
 
     /// Use underlying extractors directly
-    #[arg(short = 'u', long, conflicts_with_all = ["video_type", "language", "episodes", "seasons"])]
-    pub(crate) extractor: bool,
+    #[arg(short = 'u', long, num_args = 0..=1, require_equals = true, value_parser = parse_extractor, default_missing_value = "auto", conflicts_with_all = ["video_type", "language", "episodes", "seasons", "concurrent_downloads", "ddos_wait_episodes", "ddos_wait_ms"])]
+    pub(crate) extractor: Option<Extractor>,
 
     /// Concurrent downloads
-    #[arg(short = 'N', long, default_value = "5")]
+    #[arg(short = 'N', long, value_parser = parse_optional_with_inf_as_none::<NonZeroU32>, default_value = "5")]
     pub(crate) concurrent_downloads: Option<NonZeroU32>,
+
+    /// Amount of episodes to extract before waiting
+    #[arg(long, value_parser = parse_optional_with_never_as_none::<NonZeroU32>, default_value = "4")]
+    pub(crate) ddos_wait_episodes: Option<NonZeroU32>,
+
+    /// The duration in milliseconds to wait
+    #[arg(long, default_value_t = 60 * 1000)]
+    pub(crate) ddos_wait_ms: u32,
 
     // Enable debug mode
     #[arg(short, long)]
@@ -58,6 +68,16 @@ impl Args {
             (SimpleRanges::Custom(episodes), SimpleRanges::All) => EpisodesRequest::Episodes(episodes),
             (SimpleRanges::All, SimpleRanges::Custom(seasons)) => EpisodesRequest::Seasons(seasons),
             (SimpleRanges::Custom(_), SimpleRanges::Custom(_)) => unreachable!(),
+        }
+    }
+
+    pub(crate) fn get_download_settings(&self) -> DownloadSettings<impl FnMut() -> Duration> {
+        let wait_duration = Duration::from_millis(self.ddos_wait_ms as u64);
+        let wait_fn = move || wait_duration;
+
+        DownloadSettings {
+            ddos_wait_episodes: self.ddos_wait_episodes,
+            ddos_wait_time: wait_fn,
         }
     }
 }
@@ -86,6 +106,12 @@ impl Display for SimpleRanges {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum Extractor {
+    Auto,
+    Name(String),
+}
+
 fn parse_ranges(input: &str) -> Result<SimpleRanges, String> {
     const BEFORE_LAST: u32 = u32::MAX - 1;
 
@@ -107,10 +133,6 @@ fn parse_ranges(input: &str) -> Result<SimpleRanges, String> {
                 return Err(format!("failed to parse \"{end}\" as integer in range \"{part}\""));
             };
 
-            if begin < 1 {
-                return Err(format!("range has to start with at least 1: \"{part}\""));
-            }
-
             if begin > end {
                 return Err(format!("range start cannot be bigger than range end: \"{part}\""));
             }
@@ -120,10 +142,6 @@ fn parse_ranges(input: &str) -> Result<SimpleRanges, String> {
             let Ok(episode @ ..=BEFORE_LAST) = part.parse::<u32>() else {
                 return Err(format!("failed to parse \"{part}\" as integer"));
             };
-
-            if episode < 1 {
-                return Err(format!("episode number has to be at least 1: \"{part}\""));
-            }
 
             ranges.push(episode..=episode);
         }
@@ -147,4 +165,37 @@ fn parse_ranges(input: &str) -> Result<SimpleRanges, String> {
         .collect();
 
     Ok(SimpleRanges::Custom(merged_ranges))
+}
+
+fn parse_extractor(input: &str) -> Result<Extractor, String> {
+    if input.eq_ignore_ascii_case("auto") {
+        Ok(Extractor::Auto)
+    } else {
+        Ok(Extractor::Name(input.to_owned()))
+    }
+}
+
+fn parse_optional_with_none<T: FromStr>(input: &str, none_value: &'static str) -> Result<Option<T>, String>
+where
+    T::Err: Display,
+{
+    if input.eq_ignore_ascii_case(none_value) {
+        Ok(None)
+    } else {
+        input.parse::<T>().map(Some).map_err(|err| format!("{err}"))
+    }
+}
+
+fn parse_optional_with_inf_as_none<T: FromStr>(input: &str) -> Result<Option<T>, String>
+where
+    T::Err: Display,
+{
+    parse_optional_with_none(input, "inf")
+}
+
+fn parse_optional_with_never_as_none<T: FromStr>(input: &str) -> Result<Option<T>, String>
+where
+    T::Err: Display,
+{
+    parse_optional_with_none(input, "never")
 }
