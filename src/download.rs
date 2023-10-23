@@ -785,34 +785,34 @@ fn prepare_series_name_for_file(name: &str) -> Option<String> {
 fn format_episode_number(episode_number: EpisodeNumber, alignment_episode_number: Option<usize>) -> String {
     match episode_number {
         EpisodeNumber::Number(episode_number) => {
-            if let Some(alignment) = alignment_episode_number {
-                format!("{:0fill$}", episode_number, fill = alignment)
-            } else {
-                format!("{:02}", episode_number)
-            }
+            format!("{episode_number:0>fill$}", fill = alignment_episode_number.unwrap_or(2))
         }
         EpisodeNumber::String(episode_number) => {
-            if let Some(alignment) = alignment_episode_number {
-                let episode_number = episode_number.trim();
+            let trimmed_episode_number = episode_number.trim();
 
-                if let Some((pre, post)) = episode_number.split_once(['.', ',']) {
-                    let pre_all_digits = pre.bytes().all(|b| b.is_ascii_digit());
-                    let post_all_digits = post.bytes().all(|b| b.is_ascii_digit());
+            if let Some((pre, post)) = trimmed_episode_number.split_once(['.', ',']) {
+                let pre_all_digits = pre.bytes().all(|b| b.is_ascii_digit());
+                let post_all_digits = post.bytes().all(|b| b.is_ascii_digit());
 
-                    if pre_all_digits && post_all_digits {
-                        let delim = episode_number.as_bytes()[pre.len()] as char;
-                        return format!("{:0fill$}{}{}", pre, delim, post, fill = alignment);
-                    }
+                if pre_all_digits && post_all_digits {
+                    let delim = trimmed_episode_number.as_bytes()[pre.len()] as char;
+                    return format!(
+                        "{pre:0>fill$}{delim}{post}",
+                        fill = alignment_episode_number.unwrap_or(2)
+                    );
                 }
             }
 
-            episode_number
+            trimmed_episode_number.to_owned()
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::download::format_episode_number;
+    use crate::downloaders::EpisodeNumber;
+
     #[test]
     fn test_fix_filename() {
         use super::prepare_series_name_for_file;
@@ -853,6 +853,26 @@ mod tests {
                 "failed for {}",
                 input
             );
+        }
+    }
+
+    #[test]
+    fn test_format_episode_number() {
+        let tests = [
+            ((EpisodeNumber::Number(5), None), "05"),
+            ((EpisodeNumber::Number(15), None), "15"),
+            ((EpisodeNumber::Number(5), Some(2)), "05"),
+            ((EpisodeNumber::Number(15), Some(2)), "15"),
+            ((EpisodeNumber::Number(15), Some(4)), "0015"),
+            ((EpisodeNumber::String("15.5".to_string()), None), "15.5"),
+            ((EpisodeNumber::String("15.5".to_string()), Some(4)), "0015.5"),
+            ((EpisodeNumber::String("1000.5".to_string()), Some(4)), "1000.5"),
+            ((EpisodeNumber::String("1.2.3".to_string()), None), "1.2.3"),
+            ((EpisodeNumber::String("1.2.3".to_string()), Some(100)), "1.2.3"),
+        ];
+
+        for (input, output) in tests {
+            assert_eq!(format_episode_number(input.0, input.1), output.to_string());
         }
     }
 }
