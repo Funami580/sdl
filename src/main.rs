@@ -127,9 +127,9 @@ async fn do_after_chrome_driver(
 
     if let Some(extractor) = extractor {
         let extractor_result = if let Extractor::Name(extractor_name) = extractor {
-            extract_video_url_with_extractor(url, extractor_name, None).await
+            extract_video_url_with_extractor(url, extractor_name, None, None).await
         } else {
-            extract_video_url(url, None).await
+            extract_video_url(url, None, None).await
         };
 
         let extracted_video = match extractor_result {
@@ -203,7 +203,7 @@ async fn do_after_chrome_driver(
         };
 
         let (downloader_result, _) = tokio::join!(
-            series_downloader.download(download_request, &download_settings, sender),
+            series_downloader.download(download_request, download_settings, sender),
             download_manager.progress_downloads(),
         );
 

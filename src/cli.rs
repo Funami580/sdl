@@ -13,11 +13,11 @@ use crate::downloaders::{AllOrSpecific, DownloadSettings, EpisodesRequest, Langu
 /// Download multiple episodes from streaming sites
 pub(crate) struct Args {
     /// Only download specific type
-    #[arg(value_enum, short = 't', long = "type", ignore_case = true, default_value_t = SimpleVideoType::Unspecified, hide_default_value = true)]
+    #[arg(value_enum, long = "type", ignore_case = true, default_value_t = SimpleVideoType::Unspecified, hide_default_value = true)]
     pub(crate) video_type: SimpleVideoType,
 
     /// Only download specific language
-    #[arg(value_enum, short, long, ignore_case = true, default_value_t = Language::Unspecified, hide_default_value = true)]
+    #[arg(value_enum, short, long = "lang", ignore_case = true, default_value_t = Language::Unspecified, hide_default_value = true)]
     pub(crate) language: Language,
 
     /// Only download specific episodes
@@ -36,7 +36,7 @@ pub(crate) struct Args {
     #[arg(short = 'N', long, value_parser = parse_optional_with_inf_as_none::<NonZeroU32>, default_value = "5")]
     pub(crate) concurrent_downloads: OptionWrapper<NonZeroU32>,
 
-    /// Amount of episodes to extract before waiting
+    /// Amount of requests before waiting
     #[arg(long, value_parser = parse_optional_with_never_as_none::<NonZeroU32>, default_value = "4")]
     pub(crate) ddos_wait_episodes: OptionWrapper<NonZeroU32>,
 
@@ -55,7 +55,7 @@ pub(crate) struct Args {
 impl Args {
     pub(crate) fn get_video_type(&self) -> VideoType {
         match self.video_type {
-            SimpleVideoType::Unspecified => VideoType::Unspecified,
+            SimpleVideoType::Unspecified => VideoType::Unspecified(self.language),
             SimpleVideoType::Raw => VideoType::Raw,
             SimpleVideoType::Dub => VideoType::Dub(self.language),
             SimpleVideoType::Sub => VideoType::Sub(self.language),
@@ -86,10 +86,7 @@ impl Args {
         let wait_duration = Duration::from_millis(self.ddos_wait_ms as u64);
         let wait_fn = move || wait_duration;
 
-        DownloadSettings {
-            ddos_wait_episodes: self.ddos_wait_episodes.inner().copied(),
-            ddos_wait_time: wait_fn,
-        }
+        DownloadSettings::new(self.ddos_wait_episodes.inner().copied(), wait_fn)
     }
 }
 

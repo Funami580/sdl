@@ -1,9 +1,12 @@
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::Arc;
 
 use anyhow::Context;
 use selenium_manager::SeleniumManager;
+use thirtyfour::common::config::WebDriverConfigBuilder;
+use thirtyfour::extensions::query::ElementPollerNoWait;
 use thirtyfour::ChromiumLikeCapabilities;
 
 use crate::download::{self, Downloader, InternalDownloadTask};
@@ -82,7 +85,15 @@ impl<'a> ChromeDriver<'a> {
         let mut driver = None;
 
         for _ in 0..20 {
-            match thirtyfour::WebDriver::new(&format!("http://localhost:{}", port), caps.clone()).await {
+            match thirtyfour::WebDriver::new_with_config(
+                &format!("http://localhost:{}", port),
+                caps.clone(),
+                WebDriverConfigBuilder::new()
+                    .poller(Arc::new(ElementPollerNoWait))
+                    .build(),
+            )
+            .await
+            {
                 Ok(d) => {
                     driver = Some(d);
                     break;

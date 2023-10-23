@@ -11,39 +11,39 @@ pub mod vidoza;
 pub mod voe;
 
 macro_rules! extract_video_url {
-    ($url:expr, $user_agent:expr, $ext:ty $(, $tail:ty)* $(,)?) => {
+    ($url:expr, $user_agent:expr, $referer:expr, $ext:ty $(, $tail:ty)* $(,)?) => {
         if <$ext>::supports_url($url).await.unwrap_or(false) {
-            Some(<$ext>::extract_video_url(ExtractFrom::Url { url: $url.to_owned(), user_agent: $user_agent }).await)
+            Some(<$ext>::extract_video_url(ExtractFrom::Url { url: $url.to_owned(), user_agent: $user_agent, referer: $referer }).await)
         } else {
-            extract_video_url!($url, $user_agent, $($tail),*)
+            extract_video_url!($url, $user_agent, $referer, $($tail),*)
         }
     };
-    ($url:expr, $user_agent:expr $(,)?) => {
+    ($url:expr, $user_agent:expr, $referer:expr $(,)?) => {
         None
     };
 }
 
 macro_rules! extract_video_url_with_extractor {
-    ($url:expr, $extractor:expr, $user_agent:expr, $ext:ty $(, $tail:ty)* $(,)?) => {
+    ($url:expr, $extractor:expr, $user_agent:expr, $referer:expr, $ext:ty $(, $tail:ty)* $(,)?) => {
         if $extractor.eq_ignore_ascii_case(stringify!($ext)) {
-            Some(<$ext>::extract_video_url(ExtractFrom::Url { url: $url.to_owned(), user_agent: $user_agent }).await)
+            Some(<$ext>::extract_video_url(ExtractFrom::Url { url: $url.to_owned(), user_agent: $user_agent, referer: $referer }).await)
         } else {
-            extract_video_url_with_extractor!($url, $extractor, $user_agent, $($tail),*)
+            extract_video_url_with_extractor!($url, $extractor, $user_agent, $referer, $($tail),*)
         }
     };
-    ($url:expr, $extractor:expr, $user_agent:expr $(,)?) => {
+    ($url:expr, $extractor:expr, $user_agent:expr, $referer:expr $(,)?) => {
         None
     };
 }
 
 macro_rules! create_functions_for_extractors {
     ($( $ext:ty ),* $(,)?) => {
-        pub async fn extract_video_url(url: &str, user_agent: Option<String>) -> Option<Result<ExtractedVideo, anyhow::Error>> {
-            extract_video_url!(url, user_agent, $($ext),*)
+        pub async fn extract_video_url(url: &str, user_agent: Option<String>, referer: Option<String>) -> Option<Result<ExtractedVideo, anyhow::Error>> {
+            extract_video_url!(url, user_agent, referer, $($ext),*)
         }
 
-        pub async fn extract_video_url_with_extractor(url: &str, extractor: &str, user_agent: Option<String>) -> Option<Result<ExtractedVideo, anyhow::Error>> {
-            extract_video_url_with_extractor!(url, extractor, user_agent, $($ext),*)
+        pub async fn extract_video_url_with_extractor(url: &str, extractor: &str, user_agent: Option<String>, referer: Option<String>) -> Option<Result<ExtractedVideo, anyhow::Error>> {
+            extract_video_url_with_extractor!(url, extractor, user_agent, referer, $($ext),*)
         }
     };
     () => {};
@@ -58,14 +58,22 @@ create_functions_for_extractors! {
 
 #[derive(Debug, Clone)]
 pub enum ExtractFrom {
-    Url { url: String, user_agent: Option<String> },
+    Url {
+        url: String,
+        user_agent: Option<String>,
+        referer: Option<String>,
+    },
     Source(String),
 }
 
 impl ExtractFrom {
     pub async fn get_source(self, referer: Option<&str>) -> Result<String, anyhow::Error> {
         match self {
-            ExtractFrom::Url { url, user_agent } => download::get_page_text(url, user_agent.as_deref(), referer).await,
+            ExtractFrom::Url {
+                url,
+                user_agent,
+                referer: referer_input,
+            } => download::get_page_text(url, user_agent.as_deref(), referer_input.as_deref().or(referer)).await,
             ExtractFrom::Source(source) => Ok(source),
         }
     }

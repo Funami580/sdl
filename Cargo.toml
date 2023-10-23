@@ -25,6 +25,7 @@ zip-extensions = "0.6.2"
 async-compression = { version = "0.4.4", features = ["tokio", "gzip"] }
 pathsearch = "0.2.0"
 portpicker = "0.1.1"
+rand = "0.8.5"
 regex = "1.10.2"
 once_cell = "1.18.0"
 enum_dispatch = "0.3.12"

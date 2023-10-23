@@ -15,7 +15,7 @@ use tokio::sync::mpsc::UnboundedSender;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use url::Url;
 
-use crate::downloaders::{DownloadTask, EpisodeNumber, SeriesInfo, VideoType};
+use crate::downloaders::{DownloadTask, EpisodeNumber, Language, SeriesInfo, VideoType};
 use crate::logger::log_wrapper::SetLogWrapper;
 
 const DEFAULT_USER_AGENT: &str =
@@ -88,7 +88,7 @@ impl DownloadManager {
                     alignment_episode_number,
                 ));
 
-                if download_task.language != VideoType::Unspecified {
+                if download_task.language != VideoType::Unspecified(Language::Unspecified) {
                     output_name.push_str(&format!(" - {}", download_task.language));
                 }
 

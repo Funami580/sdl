@@ -26,7 +26,7 @@ impl InstantiatedDownloader for Aniwave<'_> {
     async fn download<F: FnMut() -> Duration>(
         &self,
         request: super::DownloadRequest,
-        settings: &DownloadSettings<F>,
+        settings: DownloadSettings<F>,
         sender: tokio::sync::mpsc::UnboundedSender<super::DownloadTask>,
     ) -> Result<(), anyhow::Error> {
         todo!()

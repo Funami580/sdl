@@ -61,7 +61,7 @@ macro_rules! create_functions_for_extractors {
 }
 
 create_functions_for_extractors! {
-    Aniwave,
+    // Aniwave,
     AniWorldSerienStream,
 }
 
@@ -83,16 +83,62 @@ pub enum SeriesStatus {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VideoType {
-    Unspecified,
+    Unspecified(Language),
     Raw,
     Dub(Language),
     Sub(Language),
 }
 
+impl VideoType {
+    pub fn get_language(&self) -> Option<&Language> {
+        let language = match self {
+            VideoType::Unspecified(language) => language,
+            VideoType::Raw => return None,
+            VideoType::Dub(language) => language,
+            VideoType::Sub(language) => language,
+        };
+
+        Some(language)
+    }
+
+    pub fn convert_to_non_unspecified_video_types<'a>(
+        &'a self,
+        supported_video_types: &'a [VideoType],
+    ) -> Vec<&'a VideoType> {
+        let mut no_unspecified = supported_video_types.iter().filter(|video_type| match video_type {
+            VideoType::Unspecified(_) => false,
+            VideoType::Dub(Language::Unspecified) => false,
+            VideoType::Sub(Language::Unspecified) => false,
+            _ => true,
+        });
+
+        match self {
+            VideoType::Unspecified(Language::Unspecified) => no_unspecified.collect(),
+            VideoType::Unspecified(language) => no_unspecified
+                .filter(|video_type| video_type.get_language() == Some(language))
+                .collect(),
+            VideoType::Dub(Language::Unspecified) => no_unspecified
+                .filter(|video_type| matches!(video_type, VideoType::Dub(_)))
+                .collect(),
+            VideoType::Sub(Language::Unspecified) => no_unspecified
+                .filter(|video_type| matches!(video_type, VideoType::Sub(_)))
+                .collect(),
+            other_type => {
+                if no_unspecified.any(|video_type| video_type == other_type) {
+                    vec![other_type]
+                } else {
+                    vec![]
+                }
+            }
+        }
+    }
+}
+
 impl Display for VideoType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            VideoType::Unspecified => write!(f, "Unspecified"),
+            VideoType::Unspecified(Language::Unspecified) => write!(f, "Unspecified"),
+            VideoType::Unspecified(language) => write!(f, "{}", language.get_name_long()),
             VideoType::Raw => write!(f, "Raw"),
             VideoType::Dub(Language::Unspecified) => write!(f, "Dub"),
             VideoType::Sub(Language::Unspecified) => write!(f, "Sub"),
@@ -106,7 +152,7 @@ impl Display for VideoType {
 pub enum Language {
     #[clap(hide = true)]
     Unspecified,
-    #[clap(aliases = ["en", "eng"])]
+    #[clap(aliases = ["eng"])]
     English,
     #[clap(aliases = ["ger"])]
     German,
@@ -120,6 +166,14 @@ impl Language {
             Language::German => "Ger",
         }
     }
+
+    pub fn get_name_long(&self) -> &'static str {
+        match self {
+            Language::Unspecified => "Unspecified",
+            Language::English => "English",
+            Language::German => "German",
+        }
+    }
 }
 
 impl<'a> TryFrom<&'a str> for Language {
@@ -127,7 +181,7 @@ impl<'a> TryFrom<&'a str> for Language {
 
     fn try_from(value: &'a str) -> Result<Self, Self::Error> {
         let language = match value.to_ascii_lowercase().deref() {
-            "english" | "en" | "eng" => Language::English,
+            "english" | "eng" => Language::English,
             "german" | "ger" => Language::German,
             _ => {
                 anyhow::bail!("could not recognize language: {}", value);
@@ -157,10 +211,41 @@ pub enum AllOrSpecific {
     Specific(Vec<RangeInclusive<u32>>),
 }
 
+impl AllOrSpecific {
+    pub fn contains(&self, number: u32) -> bool {
+        match self {
+            AllOrSpecific::All => true,
+            AllOrSpecific::Specific(ranges) => ranges.iter().any(|range| range.contains(&number)),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct DownloadSettings<F: FnMut() -> Duration> {
     pub ddos_wait_episodes: Option<NonZeroU32>,
     pub ddos_wait_time: F,
+    counter: u32,
+}
+
+impl<F: FnMut() -> Duration> DownloadSettings<F> {
+    pub fn new(ddos_wait_episodes: Option<NonZeroU32>, ddos_wait_time: F) -> Self {
+        Self {
+            ddos_wait_episodes,
+            ddos_wait_time,
+            counter: 0,
+        }
+    }
+
+    async fn maybe_ddos_wait(&mut self) {
+        if let Some(counter_match) = &self.ddos_wait_episodes {
+            self.counter += 1;
+
+            if self.counter == counter_match.get() {
+                self.counter = 0;
+                tokio::time::sleep((self.ddos_wait_time)()).await;
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -203,7 +288,7 @@ pub trait InstantiatedDownloader {
     async fn download<F: FnMut() -> Duration>(
         &self,
         request: DownloadRequest,
-        settings: &DownloadSettings<F>,
+        settings: DownloadSettings<F>,
         sender: UnboundedSender<DownloadTask>,
     ) -> Result<(), anyhow::Error>;
 }
@@ -212,4 +297,32 @@ pub trait Downloader<'driver>: InstantiatedDownloader {
     fn new(driver: &'driver mut thirtyfour::WebDriver, url: String) -> Self;
 
     async fn supports_url(url: &str) -> bool;
+}
+
+pub mod utils {
+    use std::time::Duration;
+
+    use rand::distributions::uniform::SampleRange;
+    use rand::Rng;
+
+    pub async fn sleep_random<R: SampleRange<u64>>(ms_range: R) {
+        if ms_range.is_empty() {
+            return;
+        }
+
+        let mut rng = rand::thread_rng();
+        let duration = rng.gen_range(ms_range);
+        tokio::time::sleep(Duration::from_millis(duration)).await;
+    }
+
+    pub async fn sleep_jitter(ms_sleep: u64, ms_jitter: u64) {
+        let min = ms_sleep.saturating_sub(ms_jitter);
+        let max = ms_sleep.saturating_add(ms_jitter);
+
+        if min == max && min != 0 {
+            tokio::time::sleep(Duration::from_millis(min)).await;
+        } else {
+            sleep_random(min..=max).await
+        }
+    }
 }
