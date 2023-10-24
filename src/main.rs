@@ -148,7 +148,7 @@ async fn do_after_chrome_driver(
             }
         };
 
-        let timestamp = Local::now().format("%Y-%m-%d_%H:%M:%S.%3f").to_string();
+        let timestamp = Local::now().format("%Y-%m-%d_%H-%M-%S.%3f").to_string();
         let mut i = 0;
 
         let output_path = loop {

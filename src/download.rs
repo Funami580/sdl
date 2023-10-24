@@ -1,9 +1,11 @@
 use std::borrow::Cow;
+use std::cell::RefCell;
 use std::fmt::Write;
+use std::io::ErrorKind;
 use std::num::NonZeroU32;
+use std::ops::Deref;
 use std::path::PathBuf;
 use std::process::Stdio;
-use std::sync::Mutex;
 use std::time::Duration;
 
 use anyhow::Context;
@@ -153,8 +155,8 @@ impl InternalDownloadTask {
 
 pub(crate) struct Downloader {
     multi_progress: indicatif::MultiProgress,
-    total_progress: indicatif::ProgressBar,
-    sub_progresses: Mutex<Vec<indicatif::ProgressBar>>,
+    total_progress: RefCell<Option<indicatif::ProgressBar>>,
+    sub_progresses: RefCell<Vec<indicatif::ProgressBar>>,
     ffmpeg_path: Option<PathBuf>,
     user_agent: Option<String>,
     debug: bool,
@@ -168,13 +170,12 @@ impl Downloader {
         user_agent: Option<String>,
     ) -> Self {
         let multi_progress = indicatif::MultiProgress::new();
-        let total_progress = Self::create_total_progress_bar();
         log_wrapper.set_multi(Some(multi_progress.clone()));
 
         Downloader {
             multi_progress,
-            total_progress,
-            sub_progresses: Mutex::new(vec![]),
+            total_progress: RefCell::new(None),
+            sub_progresses: RefCell::new(vec![]),
             ffmpeg_path,
             user_agent,
             debug,
@@ -437,6 +438,12 @@ impl Downloader {
                 None => anyhow::bail!("ffmpeg failed due to signal termination"),
                 _ => {}
             }
+
+            if let Err(err) = tokio::fs::remove_file(&target_path).await {
+                if err.kind() != ErrorKind::NotFound {
+                    log::warn!("Failed to delete temporary input file for FFmpeg");
+                }
+            }
         } else {
             let temp_name = target_path
                 .file_name()
@@ -467,8 +474,8 @@ impl Downloader {
 
     fn update_progress(&self, progress_bar: &indicatif::ProgressBar, downloaded: u64, total_bytes: Option<u64>) {
         progress_bar.update(|state| {
-            state.set_len(downloaded);
-            state.set_pos(total_bytes.unwrap_or(0).max(downloaded));
+            state.set_len(total_bytes.unwrap_or(0).max(downloaded));
+            state.set_pos(downloaded);
         });
 
         self.update_progress_total(true, true)
@@ -479,7 +486,7 @@ impl Downloader {
             return;
         }
 
-        let sub_progresses_lock = self.sub_progresses.lock().unwrap();
+        let sub_progresses_lock = self.sub_progresses.borrow();
 
         let updated_bytes = if bytes {
             let total_downloaded: u64 = sub_progresses_lock.iter().map(|pb| pb.position()).sum();
@@ -499,15 +506,18 @@ impl Downloader {
 
         drop(sub_progresses_lock);
 
+        let total_progress_lock = self.total_progress.borrow();
+        let total_progress = total_progress_lock.as_ref().unwrap();
+
         if let Some((total_downloaded, total_length)) = updated_bytes {
-            self.total_progress.update(|state| {
+            total_progress.update(|state| {
                 state.set_len(total_length);
                 state.set_pos(total_downloaded);
             });
         }
 
         if let Some(message) = updated_message {
-            self.total_progress.set_message(message);
+            total_progress.set_message(message);
         }
     }
 
@@ -547,9 +557,17 @@ impl Downloader {
     }
 
     fn post_prepare_progress_bar(&self, progress_bar: indicatif::ProgressBar) -> indicatif::ProgressBar {
-        self.multi_progress.add(self.total_progress.clone());
-        let pb = self.multi_progress.insert_before(&self.total_progress, progress_bar);
-        self.sub_progresses.lock().unwrap().push(pb.clone());
+        let mut total_progress_lock = self.total_progress.borrow_mut();
+
+        if total_progress_lock.is_none() {
+            let new_total_progress = Self::create_total_progress_bar();
+            *total_progress_lock = Some(self.multi_progress.add(new_total_progress));
+        }
+
+        let pb = self
+            .multi_progress
+            .insert_before(total_progress_lock.as_ref().unwrap(), progress_bar);
+        self.sub_progresses.borrow_mut().push(pb.clone());
         pb
     }
 
@@ -565,20 +583,24 @@ impl Downloader {
     pub(crate) fn clear(self) {
         let _ = self.multi_progress.clear();
 
-        for sub_progress in self.sub_progresses.lock().unwrap().iter() {
+        for sub_progress in self.sub_progresses.borrow().iter() {
             sub_progress.finish_and_clear();
             self.multi_progress.remove(sub_progress);
         }
 
-        self.total_progress.finish_and_clear();
-        self.multi_progress.remove(&self.total_progress);
+        if let Some(total_progress) = self.total_progress.borrow().deref() {
+            total_progress.finish_and_clear();
+            self.multi_progress.remove(total_progress);
+        }
     }
 }
 
 impl Drop for Downloader {
     fn drop(&mut self) {
-        if !self.total_progress.is_finished() {
-            self.total_progress.finish();
+        if let Some(total_progress) = self.total_progress.borrow().deref() {
+            if !total_progress.is_finished() {
+                total_progress.finish();
+            }
         }
     }
 }
