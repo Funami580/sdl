@@ -2,6 +2,7 @@ use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::Context;
 use selenium_manager::SeleniumManager;
@@ -100,7 +101,7 @@ impl<'a> ChromeDriver<'a> {
                 }
                 Err(err) => {
                     log::warn!("Could not connect to ChromeDriver: {}", err);
-                    std::thread::sleep(std::time::Duration::from_millis(250));
+                    tokio::time::sleep(Duration::from_millis(250)).await;
                 }
             }
         }
