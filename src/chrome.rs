@@ -1,6 +1,6 @@
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, Stdio};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -24,12 +24,12 @@ impl<'a> ChromeDriver<'a> {
         data_dir: &'a Path,
         downloader: &'a Downloader,
         headless: bool,
-    ) -> Result<thirtyfour::WebDriver, anyhow::Error> {
+    ) -> Result<(thirtyfour::WebDriver, Child), anyhow::Error> {
         let chrome_driver = ChromeDriver { data_dir, downloader };
         chrome_driver.chrome_driver(headless).await
     }
 
-    async fn chrome_driver(&self, headless: bool) -> Result<thirtyfour::WebDriver, anyhow::Error> {
+    async fn chrome_driver(&self, headless: bool) -> Result<(thirtyfour::WebDriver, Child), anyhow::Error> {
         // Launch ChromeDriver
         let chromedriver_path = Self::get_chromedriver_path()
             .await
@@ -47,7 +47,7 @@ impl<'a> ChromeDriver<'a> {
             chromedriver_cmd.stdout(Stdio::null()).stderr(Stdio::null());
         }
 
-        chromedriver_cmd
+        let child_process = chromedriver_cmd
             .arg(format!("--port={}", port))
             .spawn()
             .with_context(|| "failed to start ChromeDriver")?;
@@ -144,7 +144,7 @@ impl<'a> ChromeDriver<'a> {
             .await
             .unwrap();
 
-        Ok(driver)
+        Ok((driver, child_process))
     }
 
     async fn get_chromedriver_path() -> Option<PathBuf> {

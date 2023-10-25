@@ -76,7 +76,7 @@ async fn main() {
     let should_error_quit = do_after_chrome_driver(
         ffmpeg_install_result,
         asset_downloader,
-        chrome.as_mut(),
+        chrome.as_mut().map(|(chrome, _)| chrome),
         log_wrapper,
         save_directory,
         args,
@@ -84,9 +84,13 @@ async fn main() {
     .await;
 
     // Quit ChromeDriver
-    if let Some(chrome) = chrome {
+    if let Some((chrome, mut chrome_process)) = chrome {
         if let Err(err) = chrome.quit().await {
             log::warn!("Failed to quit ChromeDriver: {}", err);
+        }
+
+        if let Err(err) = chrome_process.kill() {
+            log::warn!("Failed to kill ChromeDriver: {}", err);
         }
     }
 
