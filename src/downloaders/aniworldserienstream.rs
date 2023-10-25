@@ -234,12 +234,8 @@ impl<'driver, 'url, F: FnMut() -> Duration> Scraper<'driver, 'url, F> {
                 }
             }
             EpisodesRequest::Episodes(episodes) => {
-                if let Some(season) = &self.parsed_url.season {
-                    self.scrape_season(season.season, &episodes).await
-                } else {
-                    log::error!("Episodes specified, but not a season");
-                    return;
-                }
+                let season = self.parsed_url.season.as_ref().map(|season| season.season).unwrap_or(1);
+                self.scrape_season(season, &episodes).await
             }
             EpisodesRequest::Seasons(seasons) => self.scrape_seasons(&seasons).await,
         };

@@ -39,8 +39,7 @@ pub(crate) struct DownloadManager {
     series_info: SeriesInfo,
 }
 
-// TODO: retries, wait between retries
-// TODO: custom timeout
+// TODO: retries, wait between retries(?)
 impl DownloadManager {
     pub(crate) fn new(
         downloader: Downloader,

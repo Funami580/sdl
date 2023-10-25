@@ -9,7 +9,7 @@ categories = ["command-line-utilities"]
 
 [dependencies]
 clap = { version = "4.4.6", features = ["derive", "cargo"] }
-tokio = { version = "1.33.0", features = ["full"] } # TODO
+tokio = { version = "1.33.0", features = ["full"] }
 tokio-stream = "0.1.14"
 futures-util = "0.3.28"
 thirtyfour = "0.32.0-rc.8"
