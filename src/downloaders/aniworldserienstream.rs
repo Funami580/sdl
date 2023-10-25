@@ -43,12 +43,15 @@ impl InstantiatedDownloader for AniWorldSerienStream<'_> {
 
         let title = self
             .driver
-            .find(By::Css(".series-title > h1 > span"))
+            .execute(
+                r#"return document.querySelector(".series-title > h1 > span").innerText;"#,
+                vec![],
+            )
             .await
-            .with_context(|| "failed to find title")?
-            .text()
-            .await
-            .with_context(|| "failed to get text of title")?
+            .with_context(|| "failed to get title")?
+            .json()
+            .as_str()
+            .with_context(|| "failed to get title as string")?
             .trim()
             .to_owned();
 
