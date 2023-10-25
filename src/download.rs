@@ -26,7 +26,6 @@ const DEFAULT_USER_AGENT: &str =
 static CLIENT: Lazy<reqwest::Client> = Lazy::new(|| {
     reqwest::Client::builder()
         .user_agent(DEFAULT_USER_AGENT)
-        .timeout(Duration::from_secs(20))
         .connect_timeout(Duration::from_secs(20))
         .build()
         .unwrap()
