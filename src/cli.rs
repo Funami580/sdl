@@ -17,8 +17,12 @@ pub(crate) struct Args {
     pub(crate) video_type: SimpleVideoType,
 
     /// Only download specific language
-    #[arg(value_enum, short, long = "lang", ignore_case = true, default_value_t = Language::Unspecified, hide_default_value = true)]
+    #[arg(value_enum, long = "lang", ignore_case = true, default_value_t = Language::Unspecified, hide_default_value = true)]
     pub(crate) language: Language,
+
+    /// Shorthand for type and language
+    #[arg(short = 't', value_parser = parse_shorthand, default_value_t = VideoType::Unspecified(Language::Unspecified), hide_default_value = true, conflicts_with_all = ["video_type", "language"])]
+    pub(crate) type_language: VideoType,
 
     /// Only download specific episodes
     #[arg(short, long, value_parser = parse_ranges, default_value_t = SimpleRanges::Unspecified, hide_default_value = true)]
@@ -29,7 +33,7 @@ pub(crate) struct Args {
     pub(crate) seasons: SimpleRanges,
 
     /// Use underlying extractors directly
-    #[arg(short = 'u', long, num_args = 0..=1, require_equals = true, value_parser = parse_extractor, default_missing_value = "auto", conflicts_with_all = ["video_type", "language", "episodes", "seasons", "concurrent_downloads", "ddos_wait_episodes", "ddos_wait_ms"])]
+    #[arg(short = 'u', long, num_args = 0..=1, require_equals = true, value_parser = parse_extractor, default_missing_value = "auto", conflicts_with_all = ["video_type", "language", "type_language", "episodes", "seasons", "concurrent_downloads", "ddos_wait_episodes", "ddos_wait_ms"])]
     pub(crate) extractor: Option<Extractor>,
 
     /// Concurrent downloads
@@ -44,7 +48,7 @@ pub(crate) struct Args {
     #[arg(long, default_value_t = 60 * 1000)]
     pub(crate) ddos_wait_ms: u32,
 
-    // Enable debug mode
+    /// Enable debug mode
     #[arg(short, long)]
     pub(crate) debug: bool,
 
@@ -54,6 +58,10 @@ pub(crate) struct Args {
 
 impl Args {
     pub(crate) fn get_video_type(&self) -> VideoType {
+        if self.type_language != VideoType::Unspecified(Language::Unspecified) {
+            return self.type_language;
+        }
+
         match self.video_type {
             SimpleVideoType::Unspecified => VideoType::Unspecified(self.language),
             SimpleVideoType::Raw => VideoType::Raw,
@@ -97,6 +105,72 @@ pub(crate) enum SimpleVideoType {
     Raw,
     Dub,
     Sub,
+}
+
+fn parse_shorthand(input: &str) -> Result<VideoType, String> {
+    if input.eq_ignore_ascii_case("Unspecified") {
+        return Ok(VideoType::Unspecified(Language::Unspecified));
+    }
+
+    if input.eq_ignore_ascii_case("Raw") {
+        return Ok(VideoType::Raw);
+    }
+
+    if input.eq_ignore_ascii_case("Dub") {
+        return Ok(VideoType::Dub(Language::Unspecified));
+    }
+
+    if input.eq_ignore_ascii_case("Sub") {
+        return Ok(VideoType::Sub(Language::Unspecified));
+    }
+
+    let input_lower = input.to_ascii_lowercase();
+
+    if let Some(lang_short) = input_lower.strip_suffix("dub") {
+        for lang in enum_iterator::all::<Language>() {
+            if lang == Language::Unspecified {
+                continue;
+            }
+
+            if lang_short.eq_ignore_ascii_case(lang.get_name_short()) {
+                return Ok(VideoType::Dub(lang));
+            }
+        }
+    }
+
+    if let Some(lang_short) = input_lower.strip_suffix("sub") {
+        for lang in enum_iterator::all::<Language>() {
+            if lang == Language::Unspecified {
+                continue;
+            }
+
+            if lang_short.eq_ignore_ascii_case(lang.get_name_short()) {
+                return Ok(VideoType::Sub(lang));
+            }
+        }
+    }
+
+    for lang in enum_iterator::all::<Language>() {
+        if lang == Language::Unspecified {
+            continue;
+        }
+
+        if input.eq_ignore_ascii_case(lang.get_name_long()) {
+            return Ok(VideoType::Unspecified(lang));
+        }
+    }
+
+    for lang in enum_iterator::all::<Language>() {
+        if lang == Language::Unspecified {
+            continue;
+        }
+
+        if input.eq_ignore_ascii_case(lang.get_name_short()) {
+            return Ok(VideoType::Unspecified(lang));
+        }
+    }
+
+    Err(format!("failed to parse \"{input}\" as video type shorthand"))
 }
 
 #[derive(Debug, Clone)]

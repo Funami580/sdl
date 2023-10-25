@@ -5,6 +5,7 @@ use std::time::Duration;
 
 use clap::ValueEnum;
 use enum_dispatch::enum_dispatch;
+use enum_iterator::Sequence;
 use tokio::sync::mpsc::UnboundedSender;
 
 use self::aniwave::Aniwave;
@@ -148,7 +149,7 @@ impl Display for VideoType {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum, Sequence)]
 pub enum Language {
     #[clap(hide = true)]
     Unspecified,
