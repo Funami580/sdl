@@ -12,7 +12,7 @@ use crate::downloaders::{AllOrSpecific, DownloadSettings, EpisodesRequest, Langu
 #[command(version)]
 /// Download multiple episodes from streaming sites
 pub(crate) struct Args {
-    /// Only download specific type
+    /// Only download specific video type
     #[arg(value_enum, long = "type", ignore_case = true, default_value_t = SimpleVideoType::Unspecified, hide_default_value = true)]
     pub(crate) video_type: SimpleVideoType,
 
@@ -20,32 +20,32 @@ pub(crate) struct Args {
     #[arg(value_enum, long = "lang", ignore_case = true, default_value_t = Language::Unspecified, hide_default_value = true)]
     pub(crate) language: Language,
 
-    /// Shorthand for type and language
+    /// Shorthand for language and video type
     #[arg(short = 't', value_parser = parse_shorthand, default_value_t = VideoType::Unspecified(Language::Unspecified), hide_default_value = true, conflicts_with_all = ["video_type", "language"])]
     pub(crate) type_language: VideoType,
 
     /// Only download specific episodes
-    #[arg(short, long, value_parser = parse_ranges, default_value_t = SimpleRanges::Unspecified, hide_default_value = true)]
+    #[arg(short, long, value_parser = parse_ranges, default_value_t = SimpleRanges::Unspecified, hide_default_value = true, value_name = "RANGES")]
     pub(crate) episodes: SimpleRanges,
 
     /// Only download specific seasons
-    #[arg(short, long, value_parser = parse_ranges, default_value_t = SimpleRanges::Unspecified, hide_default_value = true, conflicts_with_all = ["episodes"])]
+    #[arg(short, long, value_parser = parse_ranges, default_value_t = SimpleRanges::Unspecified, hide_default_value = true, conflicts_with_all = ["episodes"], value_name = "RANGES")]
     pub(crate) seasons: SimpleRanges,
 
     /// Use underlying extractors directly
-    #[arg(short = 'u', long, num_args = 0..=1, require_equals = true, value_parser = parse_extractor, default_missing_value = "auto", conflicts_with_all = ["video_type", "language", "type_language", "episodes", "seasons", "concurrent_downloads", "ddos_wait_episodes", "ddos_wait_ms"])]
+    #[arg(short = 'u', long, num_args = 0..=1, require_equals = true, value_parser = parse_extractor, default_missing_value = "auto", conflicts_with_all = ["video_type", "language", "type_language", "episodes", "seasons", "concurrent_downloads", "ddos_wait_episodes", "ddos_wait_ms"], value_name = "NAME")]
     pub(crate) extractor: Option<Extractor>,
 
     /// Concurrent downloads
-    #[arg(short = 'N', long, value_parser = parse_optional_with_inf_as_none::<NonZeroU32>, default_value = "5")]
+    #[arg(short = 'N', long, value_parser = parse_optional_with_inf_as_none::<NonZeroU32>, default_value = "5", value_name = "INF|NUMBER")]
     pub(crate) concurrent_downloads: OptionWrapper<NonZeroU32>,
 
     /// Amount of requests before waiting
-    #[arg(long, value_parser = parse_optional_with_never_as_none::<NonZeroU32>, default_value = "4")]
+    #[arg(long, value_parser = parse_optional_with_never_as_none::<NonZeroU32>, default_value = "4", value_name = "NEVER|NUMBER")]
     pub(crate) ddos_wait_episodes: OptionWrapper<NonZeroU32>,
 
     /// The duration in milliseconds to wait
-    #[arg(long, default_value_t = 60 * 1000)]
+    #[arg(long, default_value_t = 60 * 1000, value_name = "MILLISECONDS")]
     pub(crate) ddos_wait_ms: u32,
 
     /// Enable debug mode
