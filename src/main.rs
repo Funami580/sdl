@@ -7,7 +7,7 @@ use clap::Parser;
 use cli::{Args, Extractor};
 use download::{DownloadManager, Downloader, InternalDownloadTask};
 use downloaders::{DownloadRequest, InstantiatedDownloader};
-use extractors::{extract_video_url, extract_video_url_with_extractor};
+use extractors::{extract_video_url, extract_video_url_with_extractor_from_url};
 use ffmpeg::Ffmpeg;
 use logger::log_wrapper::{LogWrapper, SetLogWrapper};
 
@@ -131,7 +131,7 @@ async fn do_after_chrome_driver(
 
     if let Some(extractor) = extractor {
         let extractor_result = if let Extractor::Name(extractor_name) = extractor {
-            extract_video_url_with_extractor(url, extractor_name, None, None).await
+            extract_video_url_with_extractor_from_url(url, extractor_name, None, None).await
         } else {
             extract_video_url(url, None, None).await
         };

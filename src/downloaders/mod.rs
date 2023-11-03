@@ -62,7 +62,7 @@ macro_rules! create_functions_for_extractors {
 }
 
 create_functions_for_extractors! {
-    // Aniwave,
+    Aniwave,
     AniWorldSerienStream,
 }
 
@@ -131,6 +131,27 @@ impl VideoType {
                     vec![]
                 }
             }
+        }
+    }
+
+    pub fn convert_to_non_unspecified_video_types_with_data<T, const N: usize>(
+        &self,
+        supported_video_types_and_data: [(VideoType, T); N],
+    ) -> Option<Vec<(VideoType, T)>> {
+        let supported_video_types = supported_video_types_and_data
+            .iter()
+            .map(|(video_type, _)| *video_type)
+            .collect::<Vec<_>>();
+        let selected_video_types = self.convert_to_non_unspecified_video_types(&supported_video_types);
+        let selected_video_types_and_data = supported_video_types_and_data
+            .into_iter()
+            .filter(|(video_type, _)| selected_video_types.contains(&video_type))
+            .collect::<Vec<_>>();
+
+        if selected_video_types_and_data.is_empty() {
+            None
+        } else {
+            Some(selected_video_types_and_data)
         }
     }
 }

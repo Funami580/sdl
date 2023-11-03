@@ -10,6 +10,19 @@ pub mod streamtape;
 pub mod vidoza;
 pub mod voe;
 
+macro_rules! exists_extractor_with_name {
+    ($extractor:expr, $ext:ty $(, $tail:ty)* $(,)?) => {
+        if $extractor.eq_ignore_ascii_case(stringify!($ext)) {
+            true
+        } else {
+            exists_extractor_with_name!($extractor, $($tail),*)
+        }
+    };
+    ($extractor:expr $(,)?) => {
+        false
+    };
+}
+
 macro_rules! extract_video_url {
     ($url:expr, $user_agent:expr, $referer:expr, $ext:ty $(, $tail:ty)* $(,)?) => {
         if <$ext>::supports_url($url).await.unwrap_or(false) {
@@ -23,12 +36,12 @@ macro_rules! extract_video_url {
     };
 }
 
-macro_rules! extract_video_url_with_extractor {
+macro_rules! extract_video_url_with_extractor_from_url {
     ($url:expr, $extractor:expr, $user_agent:expr, $referer:expr, $ext:ty $(, $tail:ty)* $(,)?) => {
         if $extractor.eq_ignore_ascii_case(stringify!($ext)) {
             Some(<$ext>::extract_video_url(ExtractFrom::Url { url: $url.to_owned(), user_agent: $user_agent, referer: $referer }).await)
         } else {
-            extract_video_url_with_extractor!($url, $extractor, $user_agent, $referer, $($tail),*)
+            extract_video_url_with_extractor_from_url!($url, $extractor, $user_agent, $referer, $($tail),*)
         }
     };
     ($url:expr, $extractor:expr, $user_agent:expr, $referer:expr $(,)?) => {
@@ -36,14 +49,35 @@ macro_rules! extract_video_url_with_extractor {
     };
 }
 
+macro_rules! extract_video_url_with_extractor_from_source {
+    ($source:expr, $extractor:expr, $ext:ty $(, $tail:ty)* $(,)?) => {
+        if $extractor.eq_ignore_ascii_case(stringify!($ext)) {
+            Some(<$ext>::extract_video_url(ExtractFrom::Source($source)).await)
+        } else {
+            extract_video_url_with_extractor_from_source!($source, $extractor, $($tail),*)
+        }
+    };
+    ($source:expr, $extractor:expr $(,)?) => {
+        None
+    };
+}
+
 macro_rules! create_functions_for_extractors {
     ($( $ext:ty ),* $(,)?) => {
+        pub fn exists_extractor_with_name(extractor: &str) -> bool {
+            exists_extractor_with_name!(extractor, $($ext),*)
+        }
+
         pub async fn extract_video_url(url: &str, user_agent: Option<String>, referer: Option<String>) -> Option<Result<ExtractedVideo, anyhow::Error>> {
             extract_video_url!(url, user_agent, referer, $($ext),*)
         }
 
-        pub async fn extract_video_url_with_extractor(url: &str, extractor: &str, user_agent: Option<String>, referer: Option<String>) -> Option<Result<ExtractedVideo, anyhow::Error>> {
-            extract_video_url_with_extractor!(url, extractor, user_agent, referer, $($ext),*)
+        pub async fn extract_video_url_with_extractor_from_url(url: &str, extractor: &str, user_agent: Option<String>, referer: Option<String>) -> Option<Result<ExtractedVideo, anyhow::Error>> {
+            extract_video_url_with_extractor_from_url!(url, extractor, user_agent, referer, $($ext),*)
+        }
+
+        pub async fn extract_video_url_with_extractor_from_source(source: String, extractor: &str) -> Option<Result<ExtractedVideo, anyhow::Error>> {
+            extract_video_url_with_extractor_from_source!(source, extractor, $($ext),*)
         }
     };
     () => {};

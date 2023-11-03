@@ -14,7 +14,7 @@ use super::{
 };
 use crate::downloaders::utils::sleep_random;
 use crate::downloaders::{Downloader, EpisodesRequest};
-use crate::extractors::extract_video_url_with_extractor;
+use crate::extractors::extract_video_url_with_extractor_from_url;
 
 static URL_REGEX: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r#"(?i)^https?://(?:www\.)?(?:(aniworld)\.to/anime|(s)\.to/serie)/stream/([^/\s]+)(?:/(?:(?:staffel-([1-9][0-9]*)(?:/(?:episode-([1-9][0-9]*)/?)?)?)|(?:(filme)(?:/(?:film-([1-9][0-9]*)/?)?)?))?)?$"#)
@@ -86,8 +86,7 @@ impl InstantiatedDownloader for AniWorldSerienStream<'_> {
         sender: UnboundedSender<DownloadTask>,
     ) -> Result<(), anyhow::Error> {
         let mut scraper = Scraper::new(self.driver, &self.parsed_url, request, settings, sender)?;
-        scraper.scrape().await;
-        Ok(())
+        scraper.scrape().await
     }
 }
 
@@ -222,9 +221,10 @@ impl<'driver, 'url, F: FnMut() -> Duration> Scraper<'driver, 'url, F> {
         })
     }
 
-    async fn scrape(&mut self) {
+    async fn scrape(&mut self) -> Result<(), anyhow::Error> {
         let episodes_request = std::mem::replace(&mut self.request.episodes, EpisodesRequest::Unspecified);
-        let scrape_result = match episodes_request {
+
+        match episodes_request {
             EpisodesRequest::Unspecified => {
                 if let Some(season) = &self.parsed_url.season {
                     if let Some(episode) = season.episode {
@@ -241,10 +241,6 @@ impl<'driver, 'url, F: FnMut() -> Duration> Scraper<'driver, 'url, F> {
                 self.scrape_season(season, &episodes).await
             }
             EpisodesRequest::Seasons(seasons) => self.scrape_seasons(&seasons).await,
-        };
-
-        if let Err(err) = scrape_result {
-            log::error!("Failed download: {:#}", err);
         }
     }
 
@@ -262,13 +258,19 @@ impl<'driver, 'url, F: FnMut() -> Duration> Scraper<'driver, 'url, F> {
             .await
             .with_context(|| "failed to get seasons info")?;
         let season_start = if seasons_info.has_season_zero { 0 } else { 1 };
+        let mut got_error = false;
 
         for season in season_start..=seasons_info.max_season {
             if seasons.contains(season) {
                 if let Err(err) = self.scrape_season(season, &AllOrSpecific::All).await {
                     log::warn!("Failed to download S{season:02}: {err:#}");
+                    got_error = true;
                 }
             }
+        }
+
+        if got_error {
+            anyhow::bail!("failed to completely download all seasons");
         }
 
         Ok(())
@@ -301,14 +303,21 @@ impl<'driver, 'url, F: FnMut() -> Duration> Scraper<'driver, 'url, F> {
             .with_context(|| "failed to get maximum episode number in season")?;
 
         let mut goto = false;
+        let mut got_error = false;
+
         for episode in 1..=max_episodes {
             if episodes.contains(episode) {
                 if let Err(err) = self.scrape_episode(season, episode, goto).await {
                     log::warn!("Failed to get video url for S{season:02}E{episode:03}: {err:#}");
+                    got_error = true;
                 }
             }
 
             goto = true;
+        }
+
+        if got_error {
+            anyhow::bail!("failed to download complete season");
         }
 
         Ok(())
@@ -324,8 +333,7 @@ impl<'driver, 'url, F: FnMut() -> Duration> Scraper<'driver, 'url, F> {
             self.settings.maybe_ddos_wait().await;
         }
 
-        self.send_stream_to_downloader(season, episode).await?;
-        Ok(())
+        self.send_stream_to_downloader(season, episode).await
     }
 
     fn get_language_selectors(site: &Site, video_type: &VideoType) -> Option<Vec<(VideoType, By)>> {
@@ -374,21 +382,7 @@ impl<'driver, 'url, F: FnMut() -> Duration> Scraper<'driver, 'url, F> {
             Site::SerienStream => {}
         }
 
-        let supported_video_types = supported_video_types_and_selector
-            .iter()
-            .map(|(video_type, _)| *video_type)
-            .collect::<Vec<_>>();
-        let selected_video_types = video_type.convert_to_non_unspecified_video_types(&supported_video_types);
-        let selected_video_types_and_selector = supported_video_types_and_selector
-            .into_iter()
-            .filter(|(video_type, _)| selected_video_types.contains(&video_type))
-            .collect::<Vec<_>>();
-
-        if selected_video_types_and_selector.is_empty() {
-            None
-        } else {
-            Some(selected_video_types_and_selector)
-        }
+        video_type.convert_to_non_unspecified_video_types_with_data(supported_video_types_and_selector)
     }
 
     async fn get_language_element(&self) -> Option<(VideoType, WebElement)> {
@@ -444,7 +438,7 @@ impl<'driver, 'url, F: FnMut() -> Duration> Scraper<'driver, 'url, F> {
 
     async fn get_episode_info(&self, current_season: u32, current_episode: u32) -> Option<EpisodeInfo> {
         let episode_title = if let Ok(element) = self.driver.find(By::Css(".episodeGermanTitle")).await {
-            element.text().await.map(Some).unwrap_or(None).and_then(|title| {
+            element.text().await.ok().and_then(|title| {
                 let trimmed = title.trim();
 
                 if trimmed.is_empty() {
@@ -533,7 +527,7 @@ impl<'driver, 'url, F: FnMut() -> Duration> Scraper<'driver, 'url, F> {
 
             let stream_platform_name = stream_platform.text().await.unwrap();
 
-            let extracted_video = extract_video_url_with_extractor(
+            let extracted_video = extract_video_url_with_extractor_from_url(
                 redirect_link.as_str(),
                 stream_platform_name.trim(),
                 None,
