@@ -162,8 +162,23 @@ async fn do_after_chrome_driver(
                 Cow::Owned(format!("{}-{}", timestamp, i))
             };
 
-            let mp4_exists = save_directory.join(format!("{}.mp4", name)).exists();
-            let ts_exists = save_directory.join(format!("{}.ts", name)).exists(); // TODO: convert everything to try_exists
+            let mp4_name = format!("{}.mp4", name);
+            let mp4_exists = match save_directory.join(&mp4_name).try_exists() {
+                Ok(exists) => exists,
+                Err(err) => {
+                    log::error!("Failed to check if the file \"{}\" exists: {}", mp4_name, err);
+                    return true;
+                }
+            };
+
+            let ts_name = format!("{}.ts", name);
+            let ts_exists = match save_directory.join(&ts_name).try_exists() {
+                Ok(exists) => exists,
+                Err(err) => {
+                    log::error!("Failed to check if the file \"{}\" exists: {}", ts_name, err);
+                    return true;
+                }
+            };
 
             if !mp4_exists && !ts_exists {
                 break save_directory.join(name.deref());
