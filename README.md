@@ -109,5 +109,12 @@ Also, I don't plan to add new sites or extractors, but you're welcome to create 
 
 By the way, it's also possible to use `sdl` as a library.
 
+## Build from source
+Currently, Rust nightly is required.
+```
+cargo +nightly build --release
+```
+The resulting executable is found at `target/release/sdl`.
+
 ## Thanks
 * [aniworld_scraper](https://github.com/wolfswolke/aniworld_scraper) for the inspiration and showing how it could be done
