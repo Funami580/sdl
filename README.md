@@ -61,6 +61,15 @@ sdl 'https://aniworld.to/anime/stream/yuruyuri-happy-go-lily'
 sdl -t gersub 'https://s.to/serie/stream/higurashi-no-naku-koro-ni/staffel-1/episode-1'
 sdl -t engdub 'https://aniwave.to/watch/case-closed.myz/ep-1'
 ```
+Either dub or sub:
+```bash
+sdl -t ger 'https://s.to/serie/stream/higurashi-no-naku-koro-ni/staffel-1/episode-1'
+sdl -t german 'https://s.to/serie/stream/higurashi-no-naku-koro-ni/staffel-1/episode-1'
+```
+If an episode has multiple languages, the general language preference is as follows:
+* English Anime Website: EngSub > EngDub
+* German Anime Website: GerDub > GerSub > EngSub > EngDub
+* German non-Anime Website: GerDub > GerSub > EngDub > EngSub
 
 ### Downloading with extractor directly
 ```bash
