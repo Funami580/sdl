@@ -472,7 +472,10 @@ impl Downloader {
 
     fn update_progress(&self, progress_bar: &indicatif::ProgressBar, downloaded: u64, total_bytes: Option<u64>) {
         progress_bar.update(|state| {
-            state.set_len(total_bytes.unwrap_or(0).max(downloaded));
+            if !(state.len() == Some(u64::MAX) && total_bytes.is_none()) {
+                state.set_len(total_bytes.unwrap_or(0).max(downloaded));
+            }
+
             state.set_pos(downloaded);
         });
 
@@ -487,8 +490,16 @@ impl Downloader {
         let sub_progresses_lock = self.sub_progresses.borrow();
 
         let updated_bytes = if bytes {
-            let total_downloaded: u64 = sub_progresses_lock.iter().map(|pb| pb.position()).sum();
-            let total_length: u64 = sub_progresses_lock.iter().filter_map(|pb| pb.length()).sum();
+            let total_downloaded: u64 = sub_progresses_lock
+                .iter()
+                .map(|pb| pb.position())
+                .reduce(|acc, e| acc.saturating_add(e))
+                .unwrap();
+            let total_length: u64 = sub_progresses_lock
+                .iter()
+                .filter_map(|pb| pb.length())
+                .reduce(|acc, e| acc.saturating_add(e))
+                .unwrap();
             Some((total_downloaded, total_length))
         } else {
             None
@@ -523,7 +534,7 @@ impl Downloader {
         indicatif::ProgressBar::new(u64::MAX)
             .with_style(custom_progress_style(
                 indicatif::ProgressStyle::with_template(
-                    "[{elapsed_precise}] {wide_msg} {binary_bytes_per_sec:>14} {bytes:>10}/{total_bytes:<10} [{bar}] {eta:>5} {percent:>3}%",
+                    "[{elapsed_precise}] {wide_msg} {binary_bytes_per_sec:>14} {bytes:>10}{total_bytes:<11} [{bar}] {eta:>5} {percent:>3}%",
                 )
                 .unwrap()
             ))
@@ -534,7 +545,7 @@ impl Downloader {
         let pb = indicatif::ProgressBar::new(bytes)
             .with_style(custom_progress_style(
                 indicatif::ProgressStyle::with_template(
-                    "[{elapsed_precise}] {wide_msg} {binary_bytes_per_sec:>14} {bytes:>10}/{total_bytes:<10} [{bar}] {eta:>5} {percent:>3}%",
+                    "[{elapsed_precise}] {wide_msg} {binary_bytes_per_sec:>14} {bytes:>10}{total_bytes:<11} [{bar}] {eta:>5} {percent:>3}%",
                 )
                 .unwrap()
             ))
@@ -615,10 +626,14 @@ fn custom_progress_style(progress_style: indicatif::ProgressStyle) -> indicatif:
             };
         })
         .with_key("total_bytes", |state: &ProgressState, w: &mut dyn Write| {
-            let _ = match NumberPrefix::binary(state.len().unwrap() as f64) {
-                NumberPrefix::Standalone(number) => write!(w, "{number:.0} B"),
-                NumberPrefix::Prefixed(prefix, number) => write!(w, "{number:.1} {prefix}B"),
-            };
+            // Only if total bytes are known
+            if state.len() != Some(u64::MAX) {
+                let _ = write!(w, "/");
+                let _ = match NumberPrefix::binary(state.len().unwrap() as f64) {
+                    NumberPrefix::Standalone(number) => write!(w, "{number:.0} B"),
+                    NumberPrefix::Prefixed(prefix, number) => write!(w, "{number:.1} {prefix}B"),
+                };
+            }
         })
         .with_key("binary_bytes_per_sec", |state: &ProgressState, w: &mut dyn Write| {
             let _ = match NumberPrefix::binary(state.per_sec()) {
@@ -660,7 +675,10 @@ fn custom_progress_style(progress_style: indicatif::ProgressStyle) -> indicatif:
             );
         })
         .with_key("eta", |state: &ProgressState, w: &mut dyn Write| {
-            let _ = write!(w, "({:#})", HumanDuration(state.eta()));
+            // Only if total bytes are known
+            if state.len() != Some(u64::MAX) {
+                let _ = write!(w, "({:#})", HumanDuration(state.eta()));
+            }
         })
 }
 
