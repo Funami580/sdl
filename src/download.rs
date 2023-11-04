@@ -377,10 +377,20 @@ impl Downloader {
         let mut total_bytes_estimation = None;
 
         for segment in media_playlist.segments {
-            let segment_url = m3u8_url
-                .join(&segment.uri)
-                .with_context(|| "failed to create m3u8 segment url")?;
-            let response = get_response(segment_url, self.user_agent.as_deref(), referer).await?;
+            let segment_url = match m3u8_url.join(&segment.uri) {
+                Ok(segment_url) => segment_url,
+                Err(err) => {
+                    self.error_cleanup_progress_bar(&progress_bar);
+                    return Err(err).with_context(|| "failed to create m3u8 segment url");
+                }
+            };
+            let response = match get_response(segment_url, self.user_agent.as_deref(), referer).await {
+                Ok(response) => response,
+                Err(err) => {
+                    self.error_cleanup_progress_bar(&progress_bar);
+                    return Err(err).with_context(|| "failed to get segment response");
+                }
+            };
             let mut input_stream = response.bytes_stream();
 
             while let Some(item) = input_stream.next().await {
@@ -419,27 +429,33 @@ impl Downloader {
                 ffmpeg_cmd.stdout(Stdio::null()).stderr(Stdio::null());
             }
 
-            let ffmpeg_result = ffmpeg_cmd
+            let ffmpeg_spawn_result = ffmpeg_cmd
                 .arg("-i")
                 .arg(&target_path)
                 .arg("-c")
                 .arg("copy")
                 .arg(target_path.with_extension("mp4"))
-                .spawn()
-                .with_context(|| "failed to start ffmpeg")?
-                .wait()
-                .await
-                .with_context(|| "ffmpeg was not running")?;
+                .spawn();
 
-            match ffmpeg_result.code() {
-                Some(code) if code != 0 => anyhow::bail!("ffmpeg failed with exit code {}", code),
-                None => anyhow::bail!("ffmpeg failed due to signal termination"),
-                _ => {}
-            }
-
-            if let Err(err) = tokio::fs::remove_file(&target_path).await {
-                if err.kind() != ErrorKind::NotFound {
-                    log::warn!("Failed to delete temporary input file for FFmpeg");
+            match ffmpeg_spawn_result {
+                Ok(mut child) => match child.wait().await {
+                    Ok(ffmpeg_result) => match ffmpeg_result.code() {
+                        Some(code) if code != 0 => log::warn!("FFmpeg failed with exit code {}", code),
+                        None => log::warn!("FFmpeg failed due to signal termination"),
+                        _ => {
+                            if let Err(err) = tokio::fs::remove_file(&target_path).await {
+                                if err.kind() != ErrorKind::NotFound {
+                                    log::warn!("Failed to delete temporary input file for FFmpeg: {}", err);
+                                }
+                            }
+                        }
+                    },
+                    Err(err) => {
+                        log::warn!("FFmpeg was not running: {}", err);
+                    }
+                },
+                Err(err) => {
+                    log::warn!("Failed to start FFmpeg: {}", err);
                 }
             }
         } else {
