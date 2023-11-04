@@ -1,7 +1,7 @@
 # sdl
 Download multiple episodes from streaming sites
 
-**Warning: This project is in alpha-stage, has been only tested on Linux, and is generally not well tested.**
+**Warning: This project has been only tested on Linux, and is generally not well tested.**
 
 ## Supported sites
 ### English
@@ -49,6 +49,11 @@ sdl -e 1,2-6,9 'https://aniwave.to/watch/yuruyuri.p6q'
 ### Downloading multiple seasons
 ```bash
 sdl -s 1-2,4 'https://aniworld.to/anime/stream/yuruyuri-happy-go-lily'
+```
+
+### Downloading all seasons
+```bash
+sdl 'https://aniworld.to/anime/stream/yuruyuri-happy-go-lily'
 ```
 
 ### Downloading in other languages
