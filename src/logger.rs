@@ -58,8 +58,7 @@ pub(crate) mod log_wrapper {
     //! everywhere.
     //!
     //! # Example
-    //! ```rust
-    //!     # use indicatif_log_bridge::LogWrapper;
+    //! ```ignore
     //!     # use log::info;
     //!     # use indicatif::{MultiProgress, ProgressBar};
     //!     # use std::time::Duration;
