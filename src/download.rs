@@ -20,7 +20,7 @@ use tokio::sync::mpsc::UnboundedSender;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use url::Url;
 
-use crate::downloaders::{DownloadTask, EpisodeNumber, Language, SeriesInfo, VideoType};
+use crate::downloaders::{DownloadTask, EpisodeInfo, EpisodeNumber, Language, SeriesInfo, VideoType};
 use crate::logger::log_wrapper::SetLogWrapper;
 
 const DEFAULT_USER_AGENT: &str =
@@ -75,32 +75,12 @@ impl DownloadManager {
 
         self.rx_stream
             .for_each_concurrent(self.max_concurrent, |download_task| {
-                let mut output_name = String::new();
-
-                if let Some(anime_name) = &anime_name_for_file {
-                    output_name.push_str(anime_name);
-                    output_name.push_str(" - ");
-                }
-
-                if let Some(season) = download_task.episode_info.season_number {
-                    output_name.push_str(&format!("S{:02}", season));
-                }
-
-                let alignment_episode_number = download_task
-                    .episode_info
-                    .max_episode_number_in_season
-                    .map(|max_num| (max_num.checked_ilog10().unwrap_or(0) + 1) as usize);
-
-                output_name.push('E');
-                output_name.push_str(&format_episode_number(
-                    download_task.episode_info.episode_number,
-                    alignment_episode_number,
-                ));
-
-                if download_task.language != VideoType::Unspecified(Language::Unspecified) {
-                    output_name.push_str(&format!(" - {}", download_task.language));
-                }
-
+                let output_name = get_episode_name(
+                    anime_name_for_file.as_deref(),
+                    Some(&download_task.language),
+                    &download_task.episode_info,
+                    false,
+                );
                 let output_path_no_extension = self.save_directory.join(&output_name);
 
                 let internal_task = InternalDownloadTask::new(output_path_no_extension, download_task.download_url)
@@ -879,7 +859,49 @@ fn prepare_series_name_for_file(name: &str) -> Option<String> {
     }
 }
 
-fn format_episode_number(episode_number: EpisodeNumber, alignment_episode_number: Option<usize>) -> String {
+pub(crate) fn get_episode_name(
+    anime_name: Option<&str>,
+    language: Option<&VideoType>,
+    episode_info: &EpisodeInfo,
+    include_title_if_possible: bool,
+) -> String {
+    let mut output_name = String::new();
+
+    if let Some(anime_name) = anime_name {
+        output_name.push_str(anime_name);
+        output_name.push_str(" - ");
+    }
+
+    if let Some(season) = episode_info.season_number {
+        output_name.push_str(&format!("S{:02}", season));
+    }
+
+    let alignment_episode_number = episode_info
+        .max_episode_number_in_season
+        .map(|max_num| (max_num.checked_ilog10().unwrap_or(0) + 1) as usize);
+
+    output_name.push('E');
+    output_name.push_str(&format_episode_number(
+        &episode_info.episode_number,
+        alignment_episode_number,
+    ));
+
+    if let Some(language) = language {
+        if language != &VideoType::Unspecified(Language::Unspecified) {
+            output_name.push_str(&format!(" - {}", language));
+        }
+    }
+
+    if include_title_if_possible {
+        if let Some(title) = &episode_info.name {
+            output_name.push_str(&format!(" - {}", title));
+        }
+    }
+
+    output_name
+}
+
+fn format_episode_number(episode_number: &EpisodeNumber, alignment_episode_number: Option<usize>) -> String {
     match episode_number {
         EpisodeNumber::Number(episode_number) => {
             format!("{episode_number:0>fill$}", fill = alignment_episode_number.unwrap_or(2))
@@ -969,7 +991,7 @@ mod tests {
         ];
 
         for (input, output) in tests {
-            assert_eq!(format_episode_number(input.0, input.1), output.to_string());
+            assert_eq!(format_episode_number(&input.0, input.1), output.to_string());
         }
     }
 }
