@@ -99,6 +99,8 @@ Options:
           Use underlying extractors directly
   -N, --concurrent-downloads <INF|NUMBER>
           Concurrent downloads [default: 5]
+  -r, --retries <INF|NUMBER>
+          Number of download retries [default: 5]
       --ddos-wait-episodes <NEVER|NUMBER>
           Amount of requests before waiting [default: 4]
       --ddos-wait-ms <MILLISECONDS>
