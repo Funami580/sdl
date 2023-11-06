@@ -50,7 +50,7 @@ async fn main() {
     };
 
     // Set up FFmpeg, and ChromeDriver if needed
-    let asset_downloader = Downloader::new(&mut log_wrapper, debug, None, None);
+    let asset_downloader = Downloader::new(&mut log_wrapper, debug, None, None, None);
     let ffmpeg = Ffmpeg::new(data_dir.clone());
 
     let (mut chrome, ffmpeg_install_result) = if extractor.is_none() {
@@ -127,7 +127,13 @@ async fn do_after_chrome_driver(
         Some(driver) => chrome::get_user_agent(driver).await,
         None => None,
     };
-    let episodes_downloader = Downloader::new(&mut log_wrapper, debug, Some(ffmpeg_path), user_agent);
+    let episodes_downloader = Downloader::new(
+        &mut log_wrapper,
+        debug,
+        Some(ffmpeg_path),
+        user_agent,
+        Some(args.retries.inner().copied()),
+    );
 
     if let Some(extractor) = extractor {
         let extractor_result = if let Extractor::Name(extractor_name) = extractor {

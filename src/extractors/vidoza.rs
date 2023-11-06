@@ -5,7 +5,7 @@ use regex::Regex;
 use super::utils::is_url_host_and_has_path;
 use super::{ExtractFrom, ExtractedVideo, Extractor};
 
-pub struct Vidoza {}
+pub struct Vidoza;
 
 impl Extractor for Vidoza {
     async fn supports_url(url: &str) -> Option<bool> {

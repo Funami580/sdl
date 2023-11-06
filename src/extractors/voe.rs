@@ -4,7 +4,7 @@ use regex::Regex;
 
 use super::{ExtractFrom, ExtractedVideo, Extractor};
 
-pub struct Voe {}
+pub struct Voe;
 
 impl Extractor for Voe {
     async fn supports_url(_url: &str) -> Option<bool> {

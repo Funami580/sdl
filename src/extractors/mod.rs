@@ -1,10 +1,12 @@
 use vidoza::Vidoza;
 
 use crate::download;
+use crate::extractors::dummy::Dummy;
 use crate::extractors::filemoon::Filemoon;
 use crate::extractors::streamtape::Streamtape;
 use crate::extractors::voe::Voe;
 
+pub mod dummy;
 pub mod filemoon;
 pub mod streamtape;
 pub mod vidoza;
@@ -84,6 +86,7 @@ macro_rules! create_functions_for_extractors {
 }
 
 create_functions_for_extractors! {
+    Dummy,
     Filemoon,
     Streamtape,
     Vidoza,

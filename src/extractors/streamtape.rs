@@ -6,7 +6,7 @@ use url::Url;
 use super::utils::is_url_host_and_has_path;
 use super::{ExtractFrom, ExtractedVideo, Extractor};
 
-pub struct Streamtape {}
+pub struct Streamtape;
 
 impl Extractor for Streamtape {
     async fn supports_url(url: &str) -> Option<bool> {

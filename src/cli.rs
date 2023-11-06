@@ -40,6 +40,10 @@ pub(crate) struct Args {
     #[arg(short = 'N', long, value_parser = parse_optional_with_inf_as_none::<NonZeroU32>, default_value = "5", value_name = "INF|NUMBER")]
     pub(crate) concurrent_downloads: OptionWrapper<NonZeroU32>,
 
+    /// Number of download retries
+    #[arg(short = 'r', long, value_parser = parse_optional_with_inf_as_none::<NonZeroU32>, default_value = "5", value_name = "INF|NUMBER")]
+    pub(crate) retries: OptionWrapper<NonZeroU32>,
+
     /// Amount of requests before waiting
     #[arg(long, value_parser = parse_optional_with_never_as_none::<NonZeroU32>, default_value = "4", value_name = "NEVER|NUMBER")]
     pub(crate) ddos_wait_episodes: OptionWrapper<NonZeroU32>,

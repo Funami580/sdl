@@ -12,6 +12,9 @@ use anyhow::Context;
 use futures_util::StreamExt;
 use once_cell::sync::Lazy;
 use reqwest::IntoUrl;
+use reqwest_partial_retry::{ClientExt, Config};
+use reqwest_retry::policies::ExponentialBackoffBuilder;
+use reqwest_retry::DefaultRetryableStrategy;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio_stream::wrappers::UnboundedReceiverStream;
@@ -23,12 +26,19 @@ use crate::logger::log_wrapper::SetLogWrapper;
 const DEFAULT_USER_AGENT: &str =
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Safari/537.36";
 
-static CLIENT: Lazy<reqwest::Client> = Lazy::new(|| {
+static DEFAULT_RETRY_CLIENT: Lazy<reqwest_partial_retry::Client> = Lazy::new(|| {
     reqwest::Client::builder()
         .user_agent(DEFAULT_USER_AGENT)
         .connect_timeout(Duration::from_secs(20))
         .build()
         .unwrap()
+        .resumable_with_config(
+            Config::builder()
+                .retry_policy(ExponentialBackoffBuilder::default().build_with_max_retries(5))
+                .retryable_strategy(DefaultRetryableStrategy)
+                .stream_timeout(Some(Duration::from_secs(60)))
+                .build(),
+        )
 });
 
 pub(crate) struct DownloadManager {
@@ -39,7 +49,6 @@ pub(crate) struct DownloadManager {
     series_info: SeriesInfo,
 }
 
-// TODO: retries, wait between retries(?)
 impl DownloadManager {
     pub(crate) fn new(
         downloader: Downloader,
@@ -152,6 +161,7 @@ impl InternalDownloadTask {
 }
 
 pub(crate) struct Downloader {
+    client: Option<reqwest_partial_retry::Client>,
     multi_progress: indicatif::MultiProgress,
     total_progress: RefCell<Option<indicatif::ProgressBar>>,
     sub_progresses: RefCell<Vec<indicatif::ProgressBar>>,
@@ -166,11 +176,35 @@ impl Downloader {
         debug: bool,
         ffmpeg_path: Option<PathBuf>,
         user_agent: Option<String>,
+        retries: Option<Option<NonZeroU32>>,
     ) -> Self {
         let multi_progress = indicatif::MultiProgress::new();
         log_wrapper.set_multi(Some(multi_progress.clone()));
 
+        let client = if let Some(retries) = retries {
+            let client = reqwest::Client::builder()
+                .user_agent(DEFAULT_USER_AGENT)
+                .connect_timeout(Duration::from_secs(20))
+                .build()
+                .unwrap()
+                .resumable_with_config(
+                    Config::builder()
+                        .retry_policy(
+                            ExponentialBackoffBuilder::default()
+                                .build_with_max_retries(retries.map(|x| x.get()).unwrap_or(u32::MAX)),
+                        )
+                        .retryable_strategy(DefaultRetryableStrategy)
+                        .stream_timeout(Some(Duration::from_secs(60)))
+                        .build(),
+                );
+
+            Some(client)
+        } else {
+            None
+        };
+
         Downloader {
+            client,
             multi_progress,
             total_progress: RefCell::new(None),
             sub_progresses: RefCell::new(vec![]),
@@ -182,7 +216,13 @@ impl Downloader {
 
     pub(crate) async fn download_to_file(&self, task: InternalDownloadTask) -> Result<(), anyhow::Error> {
         let url = Url::parse(&task.url).with_context(|| "failed to parse URL")?;
-        let response = get_response(url.clone(), self.user_agent.as_deref(), task.referer.as_deref()).await?;
+        let response = get_response(
+            self.client.as_ref(),
+            url.clone(),
+            self.user_agent.as_deref(),
+            task.referer.as_deref(),
+        )
+        .await?;
         let is_m3u8 = is_m3u8_url(response.url());
 
         let output_path = if !task.output_path_has_extension {
@@ -250,7 +290,7 @@ impl Downloader {
 
     async fn simple_download(
         &self,
-        response: reqwest::Response,
+        response: reqwest_partial_retry::ResumableResponse,
         target_file: tokio::fs::File,
         message: String,
     ) -> Result<(), anyhow::Error> {
@@ -262,7 +302,7 @@ impl Downloader {
             self.create_progress_bar_unknown_bytes(message)
         };
 
-        let mut input_stream = response.bytes_stream();
+        let mut input_stream = response.bytes_stream_resumable();
         let mut output_stream = tokio::io::BufWriter::new(target_file);
         let mut downloaded = 0;
 
@@ -297,14 +337,14 @@ impl Downloader {
 
     async fn m3u8_download(
         &self,
-        response: reqwest::Response,
+        response: reqwest_partial_retry::ResumableResponse,
         referer: Option<&str>,
         m3u8_url: Url,
         target_file: tokio::fs::File,
         target_path: PathBuf,
         message: String,
     ) -> Result<(), anyhow::Error> {
-        let m3u8_bytes = get_response_bytes(response).await?;
+        let m3u8_bytes = get_response_bytes(response.response()).await?;
 
         let media_playlist = match m3u8_rs::parse_playlist_res(&m3u8_bytes) {
             Ok(m3u8_rs::Playlist::MasterPlaylist(mut playlist)) => {
@@ -384,14 +424,15 @@ impl Downloader {
                     return Err(err).with_context(|| "failed to create m3u8 segment url");
                 }
             };
-            let response = match get_response(segment_url, self.user_agent.as_deref(), referer).await {
-                Ok(response) => response,
-                Err(err) => {
-                    self.error_cleanup_progress_bar(&progress_bar);
-                    return Err(err).with_context(|| "failed to get segment response");
-                }
-            };
-            let mut input_stream = response.bytes_stream();
+            let response =
+                match get_response(self.client.as_ref(), segment_url, self.user_agent.as_deref(), referer).await {
+                    Ok(response) => response,
+                    Err(err) => {
+                        self.error_cleanup_progress_bar(&progress_bar);
+                        return Err(err).with_context(|| "failed to get segment response");
+                    }
+                };
+            let mut input_stream = response.bytes_stream_resumable();
 
             while let Some(item) = input_stream.next().await {
                 let mut chunk = match item {
@@ -699,11 +740,13 @@ fn custom_progress_style(progress_style: indicatif::ProgressStyle) -> indicatif:
 }
 
 pub(crate) async fn get_response<U: IntoUrl>(
+    client: Option<&reqwest_partial_retry::Client>,
     url: U,
     user_agent: Option<&str>,
     referer: Option<&str>,
-) -> Result<reqwest::Response, anyhow::Error> {
-    let mut request = CLIENT.get(url);
+) -> Result<reqwest_partial_retry::ResumableResponse, anyhow::Error> {
+    let client = client.unwrap_or(DEFAULT_RETRY_CLIENT.deref());
+    let mut request = client.get(url);
 
     if let Some(user_agent) = user_agent {
         request = request.header(reqwest::header::USER_AGENT, user_agent);
@@ -713,12 +756,10 @@ pub(crate) async fn get_response<U: IntoUrl>(
         request = request.header(reqwest::header::REFERER, referer);
     }
 
-    let response = request
-        .send()
+    let response = client
+        .execute_resumable(request.build().with_context(|| "failed to build request")?)
         .await
-        .with_context(|| "failed to request url")?
-        .error_for_status()
-        .with_context(|| "server returned error status code")?;
+        .with_context(|| "failed to request url")?;
 
     Ok(response)
 }
@@ -735,7 +776,7 @@ pub(crate) async fn get_page_bytes<U: IntoUrl>(
     user_agent: Option<&str>,
     referer: Option<&str>,
 ) -> Result<bytes::Bytes, anyhow::Error> {
-    get_response_bytes(get_response(url, user_agent, referer).await?).await
+    get_response_bytes(get_response(None, url, user_agent, referer).await?.response()).await
 }
 
 pub(crate) async fn get_page_text<U: IntoUrl>(
@@ -743,8 +784,9 @@ pub(crate) async fn get_page_text<U: IntoUrl>(
     user_agent: Option<&str>,
     referer: Option<&str>,
 ) -> Result<String, anyhow::Error> {
-    get_response(url, user_agent, referer)
+    get_response(None, url, user_agent, referer)
         .await?
+        .response()
         .text()
         .await
         .with_context(|| "failed to parse response body as text")
@@ -755,8 +797,9 @@ pub(crate) async fn get_page_json<U: IntoUrl>(
     user_agent: Option<&str>,
     referer: Option<&str>,
 ) -> Result<serde_json::Value, anyhow::Error> {
-    get_response(url, user_agent, referer)
+    get_response(None, url, user_agent, referer)
         .await?
+        .response()
         .json()
         .await
         .with_context(|| "failed to parse response body as json")

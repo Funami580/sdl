@@ -5,7 +5,7 @@ use super::utils::is_url_host_and_has_path;
 use super::{ExtractFrom, ExtractedVideo, Extractor};
 use crate::extractors::utils::decode_packed_codes;
 
-pub struct Filemoon {}
+pub struct Filemoon;
 
 impl Extractor for Filemoon {
     async fn supports_url(url: &str) -> Option<bool> {
