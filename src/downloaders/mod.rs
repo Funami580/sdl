@@ -30,6 +30,19 @@ macro_rules! enum_dispatch {
     }
 }
 
+macro_rules! exists_downloader_for_url {
+    ($url:expr, $dl:ident $(, $tail:ident)* $(,)?) => {
+        if <$dl>::supports_url($url).await {
+            true
+        } else {
+            exists_downloader_for_url!($url, $($tail),*)
+        }
+    };
+    ($url:expr $(,)?) => {
+        false
+    };
+}
+
 macro_rules! find_downloader_for_url {
     ($driver:expr, $url:expr, $dl:ident $(, $tail:ident)* $(,)?) => {
         if <$dl>::supports_url($url).await {
@@ -49,6 +62,10 @@ macro_rules! create_functions_for_extractors {
             pub enum DispatchDownloader<'a>: InstantiatedDownloader {
                 $($dl<'a>),*
             }
+        }
+
+        pub async fn exists_downloader_for_url(url: &str) -> bool {
+            exists_downloader_for_url!(url, $($dl),*)
         }
 
         pub async fn find_downloader_for_url<'driver>(

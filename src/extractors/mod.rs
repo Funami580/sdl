@@ -12,6 +12,19 @@ pub mod streamtape;
 pub mod vidoza;
 pub mod voe;
 
+macro_rules! normalized_name {
+    ($extractor:expr, $ext:ty $(, $tail:ty)* $(,)?) => {
+        if $extractor.eq_ignore_ascii_case(stringify!($ext)) {
+            Some(stringify!($ext))
+        } else {
+            normalized_name!($extractor, $($tail),*)
+        }
+    };
+    ($extractor:expr $(,)?) => {
+        None
+    };
+}
+
 macro_rules! exists_extractor_with_name {
     ($extractor:expr, $ext:ty $(, $tail:ty)* $(,)?) => {
         if $extractor.eq_ignore_ascii_case(stringify!($ext)) {
@@ -21,6 +34,27 @@ macro_rules! exists_extractor_with_name {
         }
     };
     ($extractor:expr $(,)?) => {
+        false
+    };
+}
+
+macro_rules! exists_extractor_for_url {
+    ($url:expr, $extractor:expr, $ext:ty $(, $tail:ty)* $(,)?) => {
+        if let Some(extractor_name) = $extractor {
+            if extractor_name.eq_ignore_ascii_case(stringify!($ext)) {
+                <$ext>::supports_url($url).await.unwrap_or(true)
+            } else {
+                exists_extractor_for_url!($url, $extractor, $($tail),*)
+            }
+        } else {
+            if <$ext>::supports_url($url).await.unwrap_or(false) {
+                true
+            } else {
+                exists_extractor_for_url!($url, $extractor, $($tail),*)
+            }
+        }
+    };
+    ($url:expr, $extractor:expr $(,)?) => {
         false
     };
 }
@@ -41,7 +75,11 @@ macro_rules! extract_video_url {
 macro_rules! extract_video_url_with_extractor_from_url {
     ($url:expr, $extractor:expr, $user_agent:expr, $referer:expr, $ext:ty $(, $tail:ty)* $(,)?) => {
         if $extractor.eq_ignore_ascii_case(stringify!($ext)) {
-            Some(<$ext>::extract_video_url(ExtractFrom::Url { url: $url.to_owned(), user_agent: $user_agent, referer: $referer }).await)
+            if <$ext>::supports_url($url).await.unwrap_or(true) {
+                Some(<$ext>::extract_video_url(ExtractFrom::Url { url: $url.to_owned(), user_agent: $user_agent, referer: $referer }).await)
+            } else {
+                None
+            }
         } else {
             extract_video_url_with_extractor_from_url!($url, $extractor, $user_agent, $referer, $($tail),*)
         }
@@ -66,8 +104,16 @@ macro_rules! extract_video_url_with_extractor_from_source {
 
 macro_rules! create_functions_for_extractors {
     ($( $ext:ty ),* $(,)?) => {
+        pub fn normalized_name(extractor: &str) -> Option<&'static str> {
+            normalized_name!(extractor, $($ext),*)
+        }
+
         pub fn exists_extractor_with_name(extractor: &str) -> bool {
             exists_extractor_with_name!(extractor, $($ext),*)
+        }
+
+        pub async fn exists_extractor_for_url(url: &str, extractor: Option<&str>) -> bool {
+            exists_extractor_for_url!(url, extractor, $($ext),*)
         }
 
         pub async fn extract_video_url(url: &str, user_agent: Option<String>, referer: Option<String>) -> Option<Result<ExtractedVideo, anyhow::Error>> {

@@ -28,6 +28,7 @@ async fn main() {
     // Parse arguments
     let args = cli::Args::parse();
     let debug = args.debug;
+    let url = args.url.deref();
     let extractor = args.extractor.as_ref();
 
     // Set up logger
@@ -51,6 +52,38 @@ async fn main() {
             std::process::exit(1);
         }
     };
+
+    // Fail fast if extractor name or url is invalid
+    if let Some(extractor) = extractor {
+        let extractor_name = match extractor {
+            Extractor::Auto => None,
+            Extractor::Name(extractor_name) => {
+                if !extractors::exists_extractor_with_name(extractor_name) {
+                    log::error!("Failed to find an extractor named: {}", extractor_name);
+                    std::process::exit(1);
+                }
+
+                Some(extractor_name.deref())
+            }
+        };
+
+        if !extractors::exists_extractor_for_url(url, extractor_name).await {
+            if let Some(extractor_name) = extractor_name {
+                log::error!(
+                    "The specified extractor \"{}\" does not support the url: {}",
+                    extractors::normalized_name(extractor_name).unwrap(),
+                    url
+                );
+            } else {
+                log::error!("Failed to find an extractor for the url: {}", url);
+            }
+
+            std::process::exit(1);
+        }
+    } else if !downloaders::exists_downloader_for_url(url).await {
+        log::error!("No downloader found for the url: {}", url);
+        std::process::exit(1);
+    }
 
     // Set up FFmpeg, and ChromeDriver if needed
     let asset_downloader = Downloader::new(&mut log_wrapper, debug, None, None, None);
@@ -155,14 +188,7 @@ async fn do_after_chrome_driver(
                 log::error!("Failed to extract video url: {:#}", err);
                 return true;
             }
-            None => {
-                if let Extractor::Name(extractor_name) = extractor {
-                    log::error!("Failed to find an extractor named: {}", extractor_name);
-                } else {
-                    log::error!("Failed to find an extractor for the url: {}", url);
-                }
-                return true;
-            }
+            None => unreachable!(),
         };
 
         let timestamp = Local::now().format("%Y-%m-%d_%H-%M-%S.%3f").to_string();
@@ -228,11 +254,9 @@ async fn do_after_chrome_driver(
             return true;
         }
     } else {
-        let Some(series_downloader) = downloaders::find_downloader_for_url(chrome.unwrap(), url).await else {
-            log::error!("Failed to find a downloader for the url: {}", url);
-            return true;
-        };
-
+        let series_downloader = downloaders::find_downloader_for_url(chrome.unwrap(), url)
+            .await
+            .unwrap();
         let download_settings = args.get_download_settings();
         let series_info = match series_downloader.get_series_info().await {
             Ok(info) => info,
