@@ -105,6 +105,8 @@ Options:
           Amount of requests before waiting [default: 4]
       --ddos-wait-ms <MILLISECONDS>
           The duration in milliseconds to wait [default: 60000]
+      --mpv
+          Play in mpv
   -d, --debug
           Enable debug mode
   -h, --help
