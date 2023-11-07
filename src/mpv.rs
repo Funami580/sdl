@@ -81,7 +81,6 @@ pub(crate) async fn start_mpv_with_ipc(
         .arg(first_url)
         .arg("--}")
         .spawn()
-        .map(|_| ())
         .with_context(|| "failed to start mpv")?;
 
     let ipc_path_rs = if cfg!(unix) {
