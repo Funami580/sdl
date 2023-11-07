@@ -13,7 +13,7 @@ use crate::download::get_episode_name;
 use crate::downloaders::{DownloadTask, SeriesInfo};
 
 pub(crate) fn start_mpv(url: &str, debug: bool) -> Result<(), anyhow::Error> {
-    let mut mpv_cmd = tokio::process::Command::new("mpv");
+    let mut mpv_cmd = tokio::process::Command::new(mpv_name());
 
     if !debug {
         mpv_cmd.stdout(Stdio::null()).stderr(Stdio::null());
@@ -23,8 +23,10 @@ pub(crate) fn start_mpv(url: &str, debug: bool) -> Result<(), anyhow::Error> {
     let title = "sdl";
 
     mpv_cmd
+        .arg("--{")
         .arg(format!("--force-media-title={title}"))
         .arg(url)
+        .arg("--}")
         .spawn()
         .map(|_| ())
         .with_context(|| "failed to start mpv")
@@ -67,7 +69,7 @@ pub(crate) async fn start_mpv_with_ipc(
         None => anyhow::bail!("failed to get at least one episode url"),
     };
 
-    let mut mpv_cmd = Command::new("mpv");
+    let mut mpv_cmd = Command::new(mpv_name());
 
     if !debug {
         mpv_cmd.stdout(Stdio::null()).stderr(Stdio::null());
@@ -113,7 +115,7 @@ async fn run_mpv_ipc(
                 Err(err) => {
                     tries += 1;
 
-                    if tries == 100 {
+                    if tries == 200 {
                         return Err(err).with_context(|| "failed to connect to ipc socket")?;
                     }
 
@@ -128,8 +130,8 @@ async fn run_mpv_ipc(
     while let Some(task) = rx_stream.next().await {
         let url = task.download_url;
         let title = get_episode_name(Some(&series_info.title), Some(&task.language), &task.episode_info, true);
-        let title_json = serde_json::json!(title).to_string();
-        let title_arg = format!("force-media-title={title_json}");
+        let title_len = title.as_bytes().len();
+        let title_arg = format!("force-media-title=%{title_len}%{title}");
 
         let mut mpv_cmd = serde_json::json!({
             "command": [
@@ -154,4 +156,12 @@ async fn run_mpv_ipc(
     }
 
     Ok(())
+}
+
+fn mpv_name() -> &'static str {
+    if cfg!(unix) {
+        "mpv"
+    } else {
+        "mpv.exe"
+    }
 }
