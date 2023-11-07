@@ -11,7 +11,6 @@ use tokio_util::compat::FuturesAsyncWriteCompatExt;
 
 use crate::download::get_episode_name;
 use crate::downloaders::{DownloadTask, SeriesInfo};
-use crate::utils::remove_file_ignore_not_exists;
 
 pub(crate) fn start_mpv(url: &str, debug: bool) -> Result<(), anyhow::Error> {
     let mut mpv_cmd = tokio::process::Command::new("mpv");
@@ -94,9 +93,7 @@ pub(crate) async fn start_mpv_with_ipc(
     let mpv_ipc_result = run_mpv_ipc(&ipc_path_rs, rx_stream, series_info).await;
 
     if cfg!(unix) {
-        if let Err(err) = remove_file_ignore_not_exists(&ipc_path_mpv).await {
-            log::warn!("Failed to delete ipc socket file for mpv: {}", err);
-        }
+        let _ = tokio::fs::remove_file(&ipc_path_mpv).await;
     }
 
     mpv_ipc_result

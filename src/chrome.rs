@@ -11,6 +11,7 @@ use thirtyfour::extensions::query::ElementPollerNoWait;
 use thirtyfour::ChromiumLikeCapabilities;
 
 use crate::download::{self, Downloader, InternalDownloadTask};
+use crate::utils::{remove_dir_all_ignore_not_exists, remove_file_ignore_not_exists};
 
 const UBLOCK_GITHUB_API_URL: &str = "https://api.github.com/repos/gorhill/uBlock/releases/latest";
 
@@ -212,10 +213,8 @@ impl<'a> ChromeDriver<'a> {
 
         let ublock_download_file_path = self.data_dir.join("uBlock.zip");
 
-        if let Err(err) = tokio::fs::remove_file(&ublock_download_file_path).await {
-            if err.kind() != ErrorKind::NotFound {
-                return Err(err).with_context(|| "failed to remove old uBlock Origin asset file");
-            }
+        if let Err(err) = remove_file_ignore_not_exists(&ublock_download_file_path).await {
+            return Err(err).with_context(|| "failed to remove old uBlock Origin asset file");
         }
 
         let Some(serde_json::Value::Array(assets)) = json_object.get("assets") else {
@@ -251,10 +250,8 @@ impl<'a> ChromeDriver<'a> {
             anyhow::bail!("could not find the latest uBlock Origin asset for Chromium");
         }
 
-        if let Err(err) = tokio::fs::remove_dir_all(ublock_dir).await {
-            if err.kind() != ErrorKind::NotFound {
-                return Err(err).with_context(|| "failed to remove old uBlock Origin extension directory");
-            }
+        if let Err(err) = remove_dir_all_ignore_not_exists(ublock_dir).await {
+            return Err(err).with_context(|| "failed to remove old uBlock Origin extension directory");
         }
 
         tokio::fs::create_dir_all(ublock_dir)

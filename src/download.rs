@@ -1,7 +1,6 @@
 use std::borrow::Cow;
 use std::cell::RefCell;
 use std::fmt::Write;
-use std::io::ErrorKind;
 use std::num::NonZeroU32;
 use std::ops::Deref;
 use std::path::PathBuf;
@@ -22,6 +21,7 @@ use url::Url;
 
 use crate::downloaders::{DownloadTask, EpisodeInfo, EpisodeNumber, Language, SeriesInfo, VideoType};
 use crate::logger::log_wrapper::SetLogWrapper;
+use crate::utils::remove_file_ignore_not_exists;
 
 const DEFAULT_USER_AGENT: &str =
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Safari/537.36";
@@ -464,10 +464,8 @@ impl Downloader {
                         Some(code) if code != 0 => log::warn!("FFmpeg failed with exit code {}", code),
                         None => log::warn!("FFmpeg failed due to signal termination"),
                         _ => {
-                            if let Err(err) = tokio::fs::remove_file(&target_path).await {
-                                if err.kind() != ErrorKind::NotFound {
-                                    log::warn!("Failed to delete temporary input file for FFmpeg: {}", err);
-                                }
+                            if let Err(err) = remove_file_ignore_not_exists(&target_path).await {
+                                log::warn!("Failed to delete temporary input file for FFmpeg: {}", err);
                             }
                         }
                     },
