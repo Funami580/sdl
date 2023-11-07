@@ -116,7 +116,7 @@ async fn run_mpv_ipc(
                     tries += 1;
 
                     if tries == 200 {
-                        return Err(err).with_context(|| "failed to connect to ipc socket")?;
+                        return Err(err).with_context(|| "failed to connect to ipc socket");
                     }
 
                     tokio::time::sleep(Duration::from_millis(50)).await;

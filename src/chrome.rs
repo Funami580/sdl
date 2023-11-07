@@ -83,32 +83,34 @@ impl<'a> ChromeDriver<'a> {
             Err(err) => log::warn!("Failed to add uBlock Origin as extension: {:#}", err),
         }
 
-        // Initialize ChromeDriver
-        let mut driver = None;
+        // Initialize ChromeDriver (try for 5 seconds)
+        let driver = {
+            let mut tries = 0u8;
 
-        for _ in 0..20 {
-            match thirtyfour::WebDriver::new_with_config(
-                &format!("http://localhost:{}", port),
-                caps.clone(),
-                WebDriverConfigBuilder::new()
-                    .poller(Arc::new(ElementPollerNoWait))
-                    .build(),
-            )
-            .await
-            {
-                Ok(d) => {
-                    driver = Some(d);
-                    break;
-                }
-                Err(err) => {
-                    log::warn!("Could not connect to ChromeDriver: {}", err);
-                    tokio::time::sleep(Duration::from_millis(250)).await;
+            loop {
+                match thirtyfour::WebDriver::new_with_config(
+                    &format!("http://localhost:{}", port),
+                    caps.clone(),
+                    WebDriverConfigBuilder::new()
+                        .poller(Arc::new(ElementPollerNoWait))
+                        .build(),
+                )
+                .await
+                {
+                    Ok(driver) => {
+                        break driver;
+                    }
+                    Err(err) => {
+                        tries += 1;
+
+                        if tries == 100 {
+                            return Err(err).with_context(|| "could not connect to ChromeDriver");
+                        }
+
+                        tokio::time::sleep(Duration::from_millis(50)).await;
+                    }
                 }
             }
-        }
-
-        let Some(driver) = driver else {
-            anyhow::bail!("failed to initialize ChromeDriver");
         };
 
         let dev_tools = thirtyfour::extensions::cdp::ChromeDevTools::new(driver.handle.clone());
@@ -261,7 +263,7 @@ impl<'a> ChromeDriver<'a> {
         if let Err(err) = zip_extensions::zip_extract(&ublock_download_file_path, ublock_dir) {
             let _ = tokio::fs::remove_file(&current_version_file).await;
             let _ = tokio::fs::remove_dir_all(ublock_dir).await;
-            return Err(err).with_context(|| "failed to extract uBlock Origin asset file")?;
+            return Err(err).with_context(|| "failed to extract uBlock Origin asset file");
         }
 
         let _ = tokio::fs::remove_file(&ublock_download_file_path).await;
