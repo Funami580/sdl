@@ -1888,9 +1888,9 @@ dependencies = [
 
 [[package]]
 name = "reqwest-partial-retry"
-version = "0.1.0"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9010178ae8067c60d3e3a959530f109c7c59e74ce84782ef0afad60fc3642b35"
+checksum = "f16ba067e40f95c432d04093160150c5111af31e2601a471b29b61dd4cb4c198"
 dependencies = [
  "bytes",
  "chrono",

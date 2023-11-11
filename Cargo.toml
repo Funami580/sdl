@@ -16,7 +16,7 @@ futures-util = "0.3.28"
 thirtyfour = "0.32.0-rc.8"
 selenium-manager = { git = "https://github.com/SeleniumHQ/selenium", tag = "selenium-4.14.0" }
 reqwest = { version = "0.11.22", default-features = false, features = ["rustls-tls-native-roots", "stream", "gzip", "json"] }
-reqwest-partial-retry = "0.1.0"
+reqwest-partial-retry = "0.1.1"
 reqwest-retry = "0.3.0"
 serde_json = "1.0.107"
 bytes = "1.5.0"
