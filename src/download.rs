@@ -140,11 +140,43 @@ impl InternalDownloadTask {
     }
 }
 
+enum ProgressBarOrResult {
+    ProgressBar(indicatif::ProgressBar),
+    Abandoned { position: u64, length: Option<u64> },
+    Finished { length: u64 },
+}
+
+impl ProgressBarOrResult {
+    fn is_finished(&self) -> bool {
+        match self {
+            ProgressBarOrResult::ProgressBar(pb) => pb.is_finished(),
+            ProgressBarOrResult::Abandoned { position: _, length: _ } => false,
+            ProgressBarOrResult::Finished { length: _ } => true,
+        }
+    }
+
+    fn position(&self) -> u64 {
+        match self {
+            ProgressBarOrResult::ProgressBar(pb) => pb.position(),
+            ProgressBarOrResult::Abandoned { position, length: _ } => *position,
+            ProgressBarOrResult::Finished { length } => *length,
+        }
+    }
+
+    fn length(&self) -> Option<u64> {
+        match self {
+            ProgressBarOrResult::ProgressBar(pb) => pb.length(),
+            ProgressBarOrResult::Abandoned { position: _, length } => *length,
+            ProgressBarOrResult::Finished { length } => Some(*length),
+        }
+    }
+}
+
 pub(crate) struct Downloader {
     client: Option<reqwest_partial_retry::Client>,
     multi_progress: indicatif::MultiProgress,
     total_progress: RefCell<Option<indicatif::ProgressBar>>,
-    sub_progresses: RefCell<Vec<indicatif::ProgressBar>>,
+    sub_progresses: RefCell<Vec<ProgressBarOrResult>>,
     ffmpeg_path: Option<PathBuf>,
     user_agent: Option<String>,
     debug: bool,
@@ -276,7 +308,7 @@ impl Downloader {
     ) -> Result<(), anyhow::Error> {
         let content_length = response.content_length();
 
-        let progress_bar = if let Some(content_length) = content_length {
+        let (sub_progresses_index, progress_bar) = if let Some(content_length) = content_length {
             self.create_progress_bar(message, content_length)
         } else {
             self.create_progress_bar_unknown_bytes(message)
@@ -290,7 +322,7 @@ impl Downloader {
             let mut chunk = match item {
                 Ok(chunk) => chunk,
                 Err(err) => {
-                    self.error_cleanup_progress_bar(&progress_bar);
+                    self.error_cleanup_progress_bar(&progress_bar, sub_progresses_index);
                     return Err(err).with_context(|| "failed download");
                 }
             };
@@ -298,7 +330,7 @@ impl Downloader {
             downloaded += chunk.len() as u64;
 
             if let Err(err) = output_stream.write_all_buf(&mut chunk).await {
-                self.error_cleanup_progress_bar(&progress_bar);
+                self.error_cleanup_progress_bar(&progress_bar, sub_progresses_index);
                 return Err(err).with_context(|| "failed writing to download file");
             }
 
@@ -306,11 +338,11 @@ impl Downloader {
         }
 
         if let Err(err) = Self::clean_up_write(output_stream).await {
-            self.clean_up_progress_bar(&progress_bar);
+            self.clean_up_progress_bar(&progress_bar, sub_progresses_index);
             return Err(err);
         }
 
-        self.clean_up_progress_bar(&progress_bar);
+        self.clean_up_progress_bar(&progress_bar, sub_progresses_index);
 
         Ok(())
     }
@@ -385,7 +417,7 @@ impl Downloader {
             Err(_) => anyhow::bail!("failed to parse m3u8"),
         };
 
-        let progress_bar = self.create_progress_bar(message, u64::MAX);
+        let (sub_progresses_index, progress_bar) = self.create_progress_bar(message, u64::MAX);
         let mut output_stream = tokio::io::BufWriter::new(target_file);
         let mut downloaded_bytes = 0;
         let total_duration: f64 = media_playlist
@@ -400,7 +432,7 @@ impl Downloader {
             let segment_url = match m3u8_url.join(&segment.uri) {
                 Ok(segment_url) => segment_url,
                 Err(err) => {
-                    self.error_cleanup_progress_bar(&progress_bar);
+                    self.error_cleanup_progress_bar(&progress_bar, sub_progresses_index);
                     return Err(err).with_context(|| "failed to create m3u8 segment url");
                 }
             };
@@ -408,7 +440,7 @@ impl Downloader {
                 match get_response(self.client.as_ref(), segment_url, self.user_agent.as_deref(), referer).await {
                     Ok(response) => response,
                     Err(err) => {
-                        self.error_cleanup_progress_bar(&progress_bar);
+                        self.error_cleanup_progress_bar(&progress_bar, sub_progresses_index);
                         return Err(err).with_context(|| "failed to get segment response");
                     }
                 };
@@ -418,7 +450,7 @@ impl Downloader {
                 let mut chunk = match item {
                     Ok(chunk) => chunk,
                     Err(err) => {
-                        self.error_cleanup_progress_bar(&progress_bar);
+                        self.error_cleanup_progress_bar(&progress_bar, sub_progresses_index);
                         return Err(err).with_context(|| "failed download");
                     }
                 };
@@ -426,7 +458,7 @@ impl Downloader {
                 downloaded_bytes += chunk.len() as u64;
 
                 if let Err(err) = output_stream.write_all_buf(&mut chunk).await {
-                    self.error_cleanup_progress_bar(&progress_bar);
+                    self.error_cleanup_progress_bar(&progress_bar, sub_progresses_index);
                     return Err(err).with_context(|| "failed writing to download file");
                 }
 
@@ -439,7 +471,7 @@ impl Downloader {
         }
 
         if let Err(err) = Self::clean_up_write(output_stream).await {
-            self.clean_up_progress_bar(&progress_bar);
+            self.clean_up_progress_bar(&progress_bar, sub_progresses_index);
             return Err(err);
         }
 
@@ -488,7 +520,7 @@ impl Downloader {
             );
         }
 
-        self.clean_up_progress_bar(&progress_bar);
+        self.clean_up_progress_bar(&progress_bar, sub_progresses_index);
 
         Ok(())
     }
@@ -563,6 +595,8 @@ impl Downloader {
         if let Some(message) = updated_message {
             total_progress.set_message(message);
         }
+
+        drop(total_progress_lock);
     }
 
     fn create_total_progress_bar() -> indicatif::ProgressBar {
@@ -576,7 +610,7 @@ impl Downloader {
             .with_message("Total 0/1")
     }
 
-    fn create_progress_bar(&self, name: String, bytes: u64) -> indicatif::ProgressBar {
+    fn create_progress_bar(&self, name: String, bytes: u64) -> (usize, indicatif::ProgressBar) {
         let pb = indicatif::ProgressBar::new(bytes)
             .with_style(custom_progress_style(
                 indicatif::ProgressStyle::with_template(
@@ -588,7 +622,7 @@ impl Downloader {
         self.post_prepare_progress_bar(pb)
     }
 
-    fn create_progress_bar_unknown_bytes(&self, name: String) -> indicatif::ProgressBar {
+    fn create_progress_bar_unknown_bytes(&self, name: String) -> (usize, indicatif::ProgressBar) {
         let pb = indicatif::ProgressBar::new(0)
             .with_style(custom_progress_style(
                 indicatif::ProgressStyle::with_template(
@@ -600,7 +634,7 @@ impl Downloader {
         self.post_prepare_progress_bar(pb)
     }
 
-    fn post_prepare_progress_bar(&self, progress_bar: indicatif::ProgressBar) -> indicatif::ProgressBar {
+    fn post_prepare_progress_bar(&self, progress_bar: indicatif::ProgressBar) -> (usize, indicatif::ProgressBar) {
         let mut total_progress_lock = self.total_progress.borrow_mut();
 
         if total_progress_lock.is_none() {
@@ -611,30 +645,49 @@ impl Downloader {
         let pb = self
             .multi_progress
             .insert_before(total_progress_lock.as_ref().unwrap(), progress_bar);
-        self.sub_progresses.borrow_mut().push(pb.clone());
-        pb
+
+        drop(total_progress_lock);
+
+        let mut sub_progresses_lock = self.sub_progresses.borrow_mut();
+        let sub_progresses_index = sub_progresses_lock.len();
+        sub_progresses_lock.push(ProgressBarOrResult::ProgressBar(pb.clone()));
+        drop(sub_progresses_lock);
+
+        (sub_progresses_index, pb)
     }
 
-    fn clean_up_progress_bar(&self, progress_bar: &indicatif::ProgressBar) {
+    fn clean_up_progress_bar(&self, progress_bar: &indicatif::ProgressBar, sub_progresses_index: usize) {
         progress_bar.finish();
+
+        let position = progress_bar.position();
+        let mut sub_progresses_lock = self.sub_progresses.borrow_mut();
+        sub_progresses_lock[sub_progresses_index] = ProgressBarOrResult::Finished { length: position };
+        drop(sub_progresses_lock);
+
         self.update_progress_total(true, true);
     }
 
-    fn error_cleanup_progress_bar(&self, progress_bar: &indicatif::ProgressBar) {
+    fn error_cleanup_progress_bar(&self, progress_bar: &indicatif::ProgressBar, sub_progresses_index: usize) {
         progress_bar.abandon();
+
+        let position = progress_bar.position();
+        let length = progress_bar.length();
+        let mut sub_progresses_lock = self.sub_progresses.borrow_mut();
+        sub_progresses_lock[sub_progresses_index] = ProgressBarOrResult::Abandoned { position, length };
+        drop(sub_progresses_lock);
     }
 
     pub(crate) fn clear(self) {
         let _ = self.multi_progress.clear();
 
         for sub_progress in self.sub_progresses.borrow().iter() {
-            sub_progress.finish_and_clear();
-            self.multi_progress.remove(sub_progress);
+            if let ProgressBarOrResult::ProgressBar(pb) = sub_progress {
+                pb.finish_and_clear();
+            }
         }
 
         if let Some(total_progress) = self.total_progress.borrow().deref() {
             total_progress.finish_and_clear();
-            self.multi_progress.remove(total_progress);
         }
     }
 }
