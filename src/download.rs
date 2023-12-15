@@ -677,28 +677,28 @@ impl Downloader {
         drop(sub_progresses_lock);
     }
 
-    pub(crate) fn clear(self) {
-        let _ = self.multi_progress.clear();
+    fn clean_up_total_progress_bar(&self) {
+        if let Some(total_progress) = self.total_progress.borrow().deref() {
+            let all_finished = self.sub_progresses.borrow().iter().all(|pb| pb.is_finished());
 
-        for sub_progress in self.sub_progresses.borrow().iter() {
-            if let ProgressBarOrResult::ProgressBar(pb) = sub_progress {
-                pb.finish_and_clear();
+            if all_finished {
+                total_progress.finish();
+            } else {
+                total_progress.abandon();
             }
         }
+    }
 
-        if let Some(total_progress) = self.total_progress.borrow().deref() {
-            total_progress.finish_and_clear();
-        }
+    pub(crate) fn clear(self) {
+        self.clean_up_total_progress_bar();
+        drop(self.total_progress.take());
+        let _ = self.multi_progress.clear();
     }
 }
 
 impl Drop for Downloader {
     fn drop(&mut self) {
-        if let Some(total_progress) = self.total_progress.borrow().deref() {
-            if !total_progress.is_finished() {
-                total_progress.finish();
-            }
-        }
+        self.clean_up_total_progress_bar();
     }
 }
 
