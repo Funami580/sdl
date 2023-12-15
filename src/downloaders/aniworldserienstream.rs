@@ -510,26 +510,33 @@ impl<'driver, 'url, F: FnMut() -> Duration> Scraper<'driver, 'url, F> {
         let current_url = self.driver.current_url().await.unwrap();
 
         for stream in available_streams {
-            let Some(redirect_link) = stream.attr("data-link-target").await.unwrap() else {
+            let Some(link_target) = stream.attr("data-link-target").await.unwrap() else {
                 log::trace!("Failed to find data-link-target");
                 continue;
             };
 
-            let Ok(redirect_link) = current_url.join(&redirect_link) else {
-                log::trace!("Failed to parse redirect link: {}", redirect_link);
+            let Ok(redirect_link) = current_url.join(&link_target) else {
+                log::trace!("Failed to parse redirect link: {}", link_target);
                 continue;
             };
 
-            let Ok(stream_platform) = stream.find(By::Css("h4")).await else {
-                log::trace!("Failed to find name of stream platform");
-                continue;
-            };
-
-            let stream_platform_name = stream_platform.text().await.unwrap();
+            let stream_platform_name = self
+                .driver
+                .execute(
+                    &format!(r#"return document.querySelector('.hosterSiteVideo ul li[data-lang-key="{}"][data-link-target="{}"] h4').innerText;"#, lang_key, link_target),
+                    vec![],
+                )
+                .await
+                .with_context(|| "failed to get name of stream platform")?
+                .json()
+                .as_str()
+                .with_context(|| "failed to get name of stream platform as string")?
+                .trim()
+                .to_owned();
 
             let extracted_video = extract_video_url_with_extractor_from_url(
                 redirect_link.as_str(),
-                stream_platform_name.trim(),
+                &stream_platform_name,
                 None,
                 Some(current_url.as_str().to_owned()),
             )
@@ -547,7 +554,10 @@ impl<'driver, 'url, F: FnMut() -> Duration> Scraper<'driver, 'url, F> {
                     log::trace!("Failed to extract video url from stream: {:#}", err);
                     self.settings.maybe_ddos_wait().await;
                 }
-                None => continue,
+                None => {
+                    log::trace!("Failed to find extractor for stream platform: {}", stream_platform_name);
+                    continue;
+                }
             }
         }
 
