@@ -363,20 +363,12 @@ impl<'driver, 'url, F: FnMut() -> Duration> Scraper<'driver, 'url, F> {
         match site {
             Site::AniWorld => {
                 // Anime are preferred as sub over dub, unless it is the native dub
-                supported_video_types_and_selector.sort_by(|(type_a, _), (type_b, _)| {
-                    if type_a == type_b {
-                        return Ordering::Equal;
-                    }
-
-                    if type_a == &VideoType::Dub(Language::German) {
-                        return Ordering::Less;
-                    }
-
-                    match (type_a, type_b) {
-                        (VideoType::Dub(_), VideoType::Sub(_)) => Ordering::Greater,
-                        (VideoType::Sub(_), VideoType::Dub(_)) => Ordering::Less,
-                        _ => Ordering::Equal,
-                    }
+                supported_video_types_and_selector.sort_by(|(type_a, _), (type_b, _)| match (type_a, type_b) {
+                    (VideoType::Dub(Language::German), _) => Ordering::Less,
+                    (_, VideoType::Dub(Language::German)) => Ordering::Greater,
+                    (VideoType::Sub(_), VideoType::Dub(_)) => Ordering::Less,
+                    (VideoType::Dub(_), VideoType::Sub(_)) => Ordering::Greater,
+                    _ => Ordering::Equal,
                 });
             }
             Site::SerienStream => {}
