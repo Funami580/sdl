@@ -147,15 +147,8 @@ impl Ffmpeg {
             return Err(err).with_context(|| "failed to decompress the compressed FFmpeg file");
         }
 
-        if cfg!(unix) {
-            use std::os::unix::fs::PermissionsExt;
-            output_file
-                .metadata()
-                .await
-                .with_context(|| "failed to get metadata of FFmpeg file")?
-                .permissions()
-                .set_mode(0o755);
-        }
+        #[cfg(unix)]
+        Self::make_file_executable(&output_file).await?;
 
         let _ = tokio::fs::remove_file(&gzip_path).await;
 
@@ -188,5 +181,18 @@ impl Ffmpeg {
                 None
             }
         })
+    }
+
+    #[cfg(unix)]
+    async fn make_file_executable(file: &tokio::fs::File) -> Result<(), anyhow::Error> {
+        use std::os::unix::fs::PermissionsExt;
+
+        file.metadata()
+            .await
+            .with_context(|| "failed to get metadata of FFmpeg file")?
+            .permissions()
+            .set_mode(0o755);
+
+        Ok(())
     }
 }
