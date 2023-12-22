@@ -32,7 +32,7 @@ impl<'a> ChromeDriver<'a> {
 
     async fn chrome_driver(&self, headless: bool) -> Result<(thirtyfour::WebDriver, Child), anyhow::Error> {
         // Launch ChromeDriver
-        let chromedriver_path = Self::get_chromedriver_path()
+        let (chromedriver_path, browser_path) = Self::get_chromedriver_and_browser_path()
             .await
             .with_context(|| "failed to find or fetch ChromeDriver")?;
 
@@ -55,6 +55,8 @@ impl<'a> ChromeDriver<'a> {
 
         // ChromeDriver Capabilities
         let mut caps = thirtyfour::DesiredCapabilities::chrome();
+        caps.set_binary(&browser_path)
+            .with_context(|| format!("failed to set browser path to: {}", browser_path))?;
         caps.set_no_sandbox().unwrap();
         caps.set_disable_dev_shm_usage().unwrap();
         caps.add_arg("--disable-blink-features=AutomationControlled").unwrap();
@@ -150,25 +152,23 @@ impl<'a> ChromeDriver<'a> {
         Ok((driver, child_process))
     }
 
-    async fn get_chromedriver_path() -> Option<PathBuf> {
+    async fn get_chromedriver_and_browser_path() -> Result<(PathBuf, String), anyhow::Error> {
         match selenium_manager::chrome::ChromeManager::new() {
-            Ok(mut manager) => match tokio::task::spawn_blocking(move || manager.setup()).await {
-                Ok(result) => match result {
-                    Ok(driver_path) => return Some(driver_path),
-                    Err(err) => log::debug!("Failed to set up ChromeDriver: {}", err),
-                },
-                Err(err) => log::debug!("Failed to set up ChromeDriver: {}", err),
-            },
-            Err(err) => log::debug!("Failed to create Chrome Manager: {}", err),
+            Ok(mut manager) => {
+                let setup_result = tokio::task::spawn_blocking(move || {
+                    let driver_path = manager.setup();
+                    driver_path.map(|driver_path| (driver_path, manager.get_browser_path().to_owned()))
+                })
+                .await;
+
+                match setup_result {
+                    Ok(Ok((driver_path, browser_path))) => Ok((driver_path, browser_path)),
+                    Ok(Err(err)) => Err(err).with_context(|| "failed to set up ChromeDriver"),
+                    Err(err) => Err(err).with_context(|| "failed to set up ChromeDriver"),
+                }
+            }
+            Err(err) => Err(err).with_context(|| "failed to create Chrome Manager"),
         }
-
-        let executable_name = if cfg!(windows) {
-            "chromedriver.exe"
-        } else {
-            "chromedriver"
-        };
-
-        pathsearch::find_executable_in_path(executable_name)
     }
 
     async fn prepare_ublock(&self, ublock_dir: &PathBuf) -> Result<(), anyhow::Error> {
