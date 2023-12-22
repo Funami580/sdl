@@ -134,10 +134,16 @@ impl Ffmpeg {
         let mut decoder = async_compression::tokio::bufread::GzipDecoder::new(buf_reader);
 
         let ffmepg_path = self.get_ffmpeg_data_path(false);
-        let mut output_file = tokio::fs::OpenOptions::new()
-            .write(true)
-            .truncate(true)
-            .create(true)
+        let open_options = {
+            let mut open_options = tokio::fs::OpenOptions::new();
+            open_options.write(true);
+            open_options.truncate(true);
+            open_options.create(true);
+            #[cfg(unix)]
+            open_options.mode(0o755);
+            open_options
+        };
+        let mut output_file = open_options
             .open(&ffmepg_path)
             .await
             .with_context(|| "failed to open or create FFmpeg file")?;
@@ -146,9 +152,6 @@ impl Ffmpeg {
             let _ = tokio::fs::remove_file(&ffmepg_path).await;
             return Err(err).with_context(|| "failed to decompress the compressed FFmpeg file");
         }
-
-        #[cfg(unix)]
-        Self::make_file_executable(&output_file).await?;
 
         let _ = tokio::fs::remove_file(&gzip_path).await;
 
@@ -181,18 +184,5 @@ impl Ffmpeg {
                 None
             }
         })
-    }
-
-    #[cfg(unix)]
-    async fn make_file_executable(file: &tokio::fs::File) -> Result<(), anyhow::Error> {
-        use std::os::unix::fs::PermissionsExt;
-
-        file.metadata()
-            .await
-            .with_context(|| "failed to get metadata of FFmpeg file")?
-            .permissions()
-            .set_mode(0o755);
-
-        Ok(())
     }
 }
