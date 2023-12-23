@@ -172,7 +172,11 @@ impl ParsedUrl {
     }
 
     fn get_episode_url(&self, season: u32, episode: u32) -> String {
-        format!("{}/episode-{}", self.get_season_url(season), episode)
+        if season == 0 {
+            format!("{}/film-{}", self.get_season_url(season), episode)
+        } else {
+            format!("{}/episode-{}", self.get_season_url(season), episode)
+        }
     }
 }
 
