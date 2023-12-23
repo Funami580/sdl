@@ -156,6 +156,7 @@ impl<'a> ChromeDriver<'a> {
         match selenium_manager::chrome::ChromeManager::new() {
             Ok(mut manager) => {
                 let setup_result = tokio::task::spawn_blocking(move || {
+                    manager.set_browser_version("116".to_owned());
                     let driver_path = manager.setup();
                     driver_path.map(|driver_path| (driver_path, manager.get_browser_path().to_owned()))
                 })
