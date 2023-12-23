@@ -659,6 +659,9 @@ impl Downloader {
         sub_progresses_lock.push(ProgressBarOrResult::ProgressBar(pb.clone()));
         drop(sub_progresses_lock);
 
+        pb.tick();
+        self.update_progress_total(true, true);
+
         (sub_progresses_index, pb)
     }
 
