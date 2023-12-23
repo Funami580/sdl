@@ -69,7 +69,7 @@ fn ffmpeg_download_url() -> Result<String, anyhow::Error> {
         Architecture::X86_64 => "x64",
         Architecture::X86 => "ia32",
         Architecture::Aarch64 => "arm64",
-        Architecture::Arm => "arm64",
+        Architecture::Arm => "arm",
     };
 
     let supported = match (CURRENT_PLATFORM, CURRENT_ARCHITECTURE) {
