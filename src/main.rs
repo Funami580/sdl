@@ -91,10 +91,16 @@ async fn main() {
     let ffmpeg = Ffmpeg::new(data_dir.clone());
 
     let (mut chrome, ffmpeg_install_result) = if extractor.is_none() {
-        let (chrome, ffmpeg_install_result) = tokio::join!(
+        let chrome_ffmpeg_future = futures_util::future::join(
             chrome::ChromeDriver::get(&data_dir, &asset_downloader, !debug),
             ffmpeg.auto_download(&asset_downloader),
         );
+        let (chrome, ffmpeg_install_result) = tokio::select! {
+            biased;
+
+            result = chrome_ffmpeg_future => result,
+            _ = asset_downloader.tick() => unreachable!(),
+        };
 
         let chrome = match chrome {
             Ok(chrome) => chrome,
@@ -106,7 +112,14 @@ async fn main() {
 
         (Some(chrome), ffmpeg_install_result)
     } else {
-        (None, ffmpeg.auto_download(&asset_downloader).await)
+        let ffmpeg_install_result = tokio::select! {
+            biased;
+
+            result = ffmpeg.auto_download(&asset_downloader) => result,
+            _ = asset_downloader.tick() => unreachable!(),
+        };
+
+        (None, ffmpeg_install_result)
     };
 
     // Do much of the bulk work
@@ -234,13 +247,18 @@ async fn do_after_chrome_driver(
         };
 
         let result = if let Some(episodes_downloader) = episodes_downloader {
-            episodes_downloader
-                .download_to_file(
-                    InternalDownloadTask::new(output_path, extracted_video.url)
-                        .output_path_has_extension(false)
-                        .referer(extracted_video.referer),
-                )
-                .await
+            let download_future = episodes_downloader.download_to_file(
+                InternalDownloadTask::new(output_path, extracted_video.url)
+                    .output_path_has_extension(false)
+                    .referer(extracted_video.referer),
+            );
+
+            tokio::select! {
+                biased;
+
+                result = download_future => result,
+                _ = episodes_downloader.tick() => unreachable!(),
+            }
         } else {
             mpv::start_mpv(&extracted_video.url, debug)
         };

@@ -72,8 +72,8 @@ impl DownloadManager {
 
     pub(crate) async fn progress_downloads(self) {
         let anime_name_for_file = prepare_series_name_for_file(&self.series_info.title);
-
-        self.rx_stream
+        let download_future = self
+            .rx_stream
             .for_each_concurrent(self.max_concurrent, |download_task| {
                 let output_name = get_episode_name(
                     anime_name_for_file.as_deref(),
@@ -93,8 +93,14 @@ impl DownloadManager {
                         log::warn!("Failed download of {}: {:#}", output_name, err);
                     }
                 }
-            })
-            .await;
+            });
+
+        tokio::select! {
+            biased;
+
+            _ = download_future => {}
+            _ = self.downloader.tick() => unreachable!()
+        }
     }
 }
 
@@ -686,6 +692,29 @@ impl Downloader {
             } else {
                 total_progress.abandon();
             }
+        }
+    }
+
+    /// This function never finishes. It should be used in a select! expression.
+    pub(crate) async fn tick(&self) {
+        const TICK_INTERVAL: Duration = Duration::from_millis(100);
+
+        loop {
+            for sub_progress in self.sub_progresses.borrow().deref() {
+                if let ProgressBarOrResult::ProgressBar(pb) = &sub_progress {
+                    if !pb.is_finished() {
+                        pb.tick();
+                    }
+                }
+            }
+
+            if let Some(total_progress) = self.total_progress.borrow().deref() {
+                if !total_progress.is_finished() {
+                    total_progress.tick();
+                }
+            }
+
+            tokio::time::sleep(TICK_INTERVAL).await;
         }
     }
 
