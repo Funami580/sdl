@@ -14,7 +14,7 @@ use super::{
 };
 use crate::downloaders::utils::sleep_random;
 use crate::downloaders::{Downloader, EpisodesRequest};
-use crate::extractors::extract_video_url_with_extractor_from_url;
+use crate::extractors::extract_video_url_with_extractor_from_url_unchecked;
 
 static URL_REGEX: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r#"(?i)^https?://(?:www\.)?(?:(aniworld)\.to/anime|(s)\.to/serie)/stream/([^/\s]+)(?:/(?:(?:staffel-([1-9][0-9]*)(?:/(?:episode-([1-9][0-9]*)/?)?)?)|(?:(filme)(?:/(?:film-([1-9][0-9]*)/?)?)?))?)?$"#)
@@ -526,7 +526,7 @@ impl<'driver, 'url, F: FnMut() -> Duration> Scraper<'driver, 'url, F> {
                 .trim()
                 .to_owned();
 
-            let extracted_video = extract_video_url_with_extractor_from_url(
+            let extracted_video = extract_video_url_with_extractor_from_url_unchecked(
                 redirect_link.as_str(),
                 &stream_platform_name,
                 None,

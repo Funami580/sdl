@@ -89,6 +89,19 @@ macro_rules! extract_video_url_with_extractor_from_url {
     };
 }
 
+macro_rules! extract_video_url_with_extractor_from_url_unchecked {
+    ($url:expr, $extractor:expr, $user_agent:expr, $referer:expr, $ext:ty $(, $tail:ty)* $(,)?) => {
+        if $extractor.eq_ignore_ascii_case(stringify!($ext)) {
+            Some(<$ext>::extract_video_url(ExtractFrom::Url { url: $url.to_owned(), user_agent: $user_agent, referer: $referer }).await)
+        } else {
+            extract_video_url_with_extractor_from_url_unchecked!($url, $extractor, $user_agent, $referer, $($tail),*)
+        }
+    };
+    ($url:expr, $extractor:expr, $user_agent:expr, $referer:expr $(,)?) => {
+        None
+    };
+}
+
 macro_rules! extract_video_url_with_extractor_from_source {
     ($source:expr, $extractor:expr, $ext:ty $(, $tail:ty)* $(,)?) => {
         if $extractor.eq_ignore_ascii_case(stringify!($ext)) {
@@ -122,6 +135,10 @@ macro_rules! create_functions_for_extractors {
 
         pub async fn extract_video_url_with_extractor_from_url(url: &str, extractor: &str, user_agent: Option<String>, referer: Option<String>) -> Option<Result<ExtractedVideo, anyhow::Error>> {
             extract_video_url_with_extractor_from_url!(url, extractor, user_agent, referer, $($ext),*)
+        }
+
+        pub async fn extract_video_url_with_extractor_from_url_unchecked(url: &str, extractor: &str, user_agent: Option<String>, referer: Option<String>) -> Option<Result<ExtractedVideo, anyhow::Error>> {
+            extract_video_url_with_extractor_from_url_unchecked!(url, extractor, user_agent, referer, $($ext),*)
         }
 
         pub async fn extract_video_url_with_extractor_from_source(source: String, extractor: &str) -> Option<Result<ExtractedVideo, anyhow::Error>> {
