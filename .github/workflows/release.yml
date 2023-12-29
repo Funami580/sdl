@@ -56,7 +56,7 @@ jobs:
           echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports/ $(lsb_release -cs) main restricted universe" | sudo tee /etc/apt/sources.list.d/arm64.list
           echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports/ $(lsb_release -cs)-security main restricted universe" | sudo tee -a /etc/apt/sources.list.d/arm64.list
           sudo apt-get update -y
-          sudo apt-get install -yq libssl-dev:armhf libssl-dev:armhf libssl-dev:arm64
+          sudo apt-get install -yq libssl-dev:armhf libssl-dev:arm64
 
       - name: Build, get version
         run: |
