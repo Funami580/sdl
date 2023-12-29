@@ -21,15 +21,15 @@ jobs:
         platform: [ubuntu-latest, macos-latest, windows-latest]
         include:
           - platform: ubuntu-latest
-            artifact-path: target/release/sdl
+            artifact-path: ./target/release/sdl
             artifact-platform-name: linux-x64
             env-command: ">> $GITHUB_ENV"
           - platform: macos-latest
-            artifact-path: target/release/sdl
+            artifact-path: ./target/release/sdl
             artifact-platform-name: macos-x64
             env-command: ">> $GITHUB_ENV"
           - platform: windows-latest
-            artifact-path: target/release/sdl.exe
+            artifact-path: ./target/release/sdl.exe
             artifact-platform-name: windows-x64
             env-command: "| Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append"
 
@@ -63,6 +63,16 @@ jobs:
           cargo run --release --bin sdl -- --help
           echo "SDL_VERSION=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages | .[0].version')" ${{ matrix.env-command }}
 
+      - name: Archive (Windows)
+        if: ${{ matrix.platform == 'windows-latest' }}
+        run: |
+          7z a -tzip -mm=Deflate sdl-${{ env.SDL_VERSION }}-${{ matrix.artifact-platform-name }}.zip ${{ matrix.artifact-path }}
+
+      - name: Archive (Unix)
+        if: ${{ matrix.platform != 'windows-latest' }}
+        run: |
+          gzip -c ${{ matrix.artifact-path }} > sdl-${{ env.SDL_VERSION }}-${{ matrix.artifact-platform-name }}.gz
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -75,14 +85,7 @@ jobs:
         run: |
           rustup target add aarch64-apple-darwin
           cargo build --release --bin sdl --target aarch64-apple-darwin
-
-      - name: Upload artifacts (macos-aarch64)
-        uses: actions/upload-artifact@v4
-        if: ${{ matrix.platform == 'macos-latest' }}
-        with:
-          name: sdl-${{ env.SDL_VERSION }}-macos-aarch64
-          path: target/aarch64-apple-darwin/release/sdl
-          if-no-files-found: error
+          gzip -c ./target/aarch64-apple-darwin/release/sdl > sdl-${{ env.SDL_VERSION }}-macos-aarch64.gz
 
       - name: Build (linux-armv7-gnueabihf)
         if: ${{ matrix.platform == 'ubuntu-latest' }}
@@ -93,14 +96,7 @@ jobs:
           export ARMV7_UNKNOWN_LINUX_GNUEABIHF_OPENSSL_LIB_DIR=/usr/lib/arm-linux-gnueabihf
           export ARMV7_UNKNOWN_LINUX_GNUEABIHF_OPENSSL_INCLUDE_DIR=/usr/include/arm-linux-gnueabihf
           cargo build --release --bin sdl --target armv7-unknown-linux-gnueabihf
-
-      - name: Upload artifacts (linux-armv7-gnueabihf)
-        uses: actions/upload-artifact@v4
-        if: ${{ matrix.platform == 'ubuntu-latest' }}
-        with:
-          name: sdl-${{ env.SDL_VERSION }}-linux-armv7-gnueabihf
-          path: target/armv7-unknown-linux-gnueabihf/release/sdl
-          if-no-files-found: error
+          gzip -c ./target/armv7-unknown-linux-gnueabihf/release/sdl > sdl-${{ env.SDL_VERSION }}-linux-armv7-gnueabihf.gz
 
       - name: Build (linux-aarch64-gnu)
         if: ${{ matrix.platform == 'ubuntu-latest' }}
@@ -111,11 +107,14 @@ jobs:
           export AARCH64_UNKNOWN_LINUX_GNU_OPENSSL_LIB_DIR=/usr/lib/aarch64-linux-gnu
           export AARCH64_UNKNOWN_LINUX_GNU_OPENSSL_INCLUDE_DIR=/usr/include/aarch64-linux-gnu
           cargo build --release --bin sdl --target aarch64-unknown-linux-gnu
+          gzip -c ./target/aarch64-unknown-linux-gnu/release/sdl > sdl-${{ env.SDL_VERSION }}-linux-aarch64-gnu.gz
 
-      - name: Upload artifacts (linux-aarch64-gnu)
-        uses: actions/upload-artifact@v4
-        if: ${{ matrix.platform == 'ubuntu-latest' }}
+      - name: Upload artifacts
+        uses: softprops/action-gh-release@v1
         with:
-          name: sdl-${{ env.SDL_VERSION }}-linux-aarch64-gnu
-          path: target/aarch64-unknown-linux-gnu/release/sdl
-          if-no-files-found: error
+          files: |
+            sdl-${{ env.SDL_VERSION }}-${{ matrix.artifact-platform-name }}.zip
+            sdl-${{ env.SDL_VERSION }}-${{ matrix.artifact-platform-name }}.gz
+            sdl-${{ env.SDL_VERSION }}-macos-aarch64.gz
+            sdl-${{ env.SDL_VERSION }}-linux-armv7-gnueabihf.gz
+            sdl-${{ env.SDL_VERSION }}-linux-aarch64-gnu.gz
