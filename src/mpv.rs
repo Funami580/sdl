@@ -16,7 +16,7 @@ pub(crate) fn start_mpv(url: &str, debug: bool) -> Result<(), anyhow::Error> {
     let mut mpv_cmd = tokio::process::Command::new(mpv_name());
 
     if !debug {
-        mpv_cmd.stdout(Stdio::null()).stderr(Stdio::null());
+        mpv_cmd.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
         mpv_cmd.arg("--no-terminal");
     }
 

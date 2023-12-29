@@ -485,7 +485,11 @@ impl Downloader {
             let mut ffmpeg_cmd = tokio::process::Command::new(ffmpeg_path);
 
             if !self.debug {
-                ffmpeg_cmd.stdout(Stdio::null()).stderr(Stdio::null());
+                ffmpeg_cmd
+                    .stdin(Stdio::null())
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null());
+                ffmpeg_cmd.arg("-nostdin");
             }
 
             let ffmpeg_spawn_result = ffmpeg_cmd

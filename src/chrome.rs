@@ -45,7 +45,10 @@ impl<'a> ChromeDriver<'a> {
         let mut chromedriver_cmd = Command::new(chromedriver_path);
 
         if headless {
-            chromedriver_cmd.stdout(Stdio::null()).stderr(Stdio::null());
+            chromedriver_cmd
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null());
         }
 
         let child_process = chromedriver_cmd
