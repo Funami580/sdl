@@ -73,13 +73,6 @@ jobs:
         run: |
           gzip -c ${{ matrix.artifact-path }} > sdl-${{ env.SDL_VERSION }}-${{ matrix.artifact-platform-name }}.gz
 
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: sdl-${{ env.SDL_VERSION }}-${{ matrix.artifact-platform-name }}
-          path: ${{ matrix.artifact-path }}
-          if-no-files-found: error
-
       - name: Build (macos-aarch64)
         if: ${{ matrix.platform == 'macos-latest' }}
         run: |
