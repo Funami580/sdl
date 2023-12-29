@@ -2,6 +2,7 @@
 name = "sdl"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.75"
 readme = "README.md"
 repository = "https://github.com/Funami580/sdl"
 license = "MIT"
