@@ -161,8 +161,25 @@ impl<'a> ChromeDriver<'a> {
         match selenium_manager::chrome::ChromeManager::new() {
             Ok(mut manager) => {
                 let setup_result = tokio::task::spawn_blocking(move || {
-                    manager.set_browser_version("116".to_owned());
-                    let driver_path = manager.setup();
+                    const CHROME_VERSION: usize = 116;
+
+                    manager.set_browser_version(CHROME_VERSION.to_string());
+                    manager.download_browser()?;
+
+                    let driver_path = if let (Some(driver_version), Some(driver_path)) = manager.find_driver_in_path() {
+                        if driver_version.split('.').next().unwrap().trim() == CHROME_VERSION.to_string() {
+                            Ok(PathBuf::from(driver_path))
+                        } else {
+                            manager.set_driver_version(CHROME_VERSION.to_string());
+                            manager.download_driver()?;
+                            manager.get_driver_path_in_cache()
+                        }
+                    } else {
+                        manager.set_driver_version(CHROME_VERSION.to_string());
+                        manager.download_driver()?;
+                        manager.get_driver_path_in_cache()
+                    };
+
                     driver_path.map(|driver_path| (driver_path, manager.get_browser_path().to_owned()))
                 })
                 .await;
