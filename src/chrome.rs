@@ -164,7 +164,7 @@ impl<'a> ChromeDriver<'a> {
                     const CHROME_VERSION: usize = 116;
 
                     manager.set_browser_version(CHROME_VERSION.to_string());
-                    manager.download_browser()?;
+                    manager.discover_driver_version_and_download_browser_if_necessary()?;
 
                     let driver_path = if let (Some(driver_version), Some(driver_path)) = manager.find_driver_in_path() {
                         if driver_version.split('.').next().unwrap().trim() == CHROME_VERSION.to_string() {
