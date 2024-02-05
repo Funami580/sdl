@@ -10,6 +10,7 @@ use std::time::Duration;
 use anyhow::Context;
 use futures_util::StreamExt;
 use once_cell::sync::Lazy;
+use reqwest::header::HeaderName;
 use reqwest::IntoUrl;
 use reqwest_partial_retry::{ClientExt, Config};
 use reqwest_retry::policies::ExponentialBackoffBuilder;
@@ -239,6 +240,7 @@ impl Downloader {
             url.clone(),
             self.user_agent.as_deref(),
             task.referer.as_deref(),
+            None,
         )
         .await?;
         let is_m3u8 = is_m3u8_url(response.url());
@@ -364,7 +366,7 @@ impl Downloader {
     ) -> Result<(), anyhow::Error> {
         let m3u8_bytes = get_response_bytes(response.response()).await?;
 
-        let media_playlist = match m3u8_rs::parse_playlist_res(&m3u8_bytes) {
+        let (media_playlist_url, media_playlist) = match m3u8_rs::parse_playlist_res(&m3u8_bytes) {
             Ok(m3u8_rs::Playlist::MasterPlaylist(mut playlist)) => {
                 if playlist.variants.is_empty() {
                     anyhow::bail!("could not find any media playlists");
@@ -406,10 +408,11 @@ impl Downloader {
                 let media_playlist_url = m3u8_url
                     .join(&highest_quality_variant.uri)
                     .with_context(|| "failed to create m3u8 media playlist url")?;
-                let m3u8_media_bytes = get_page_bytes(media_playlist_url, self.user_agent.as_deref(), referer).await?;
+                let m3u8_media_bytes =
+                    get_page_bytes(media_playlist_url.as_str(), self.user_agent.as_deref(), referer, None).await?;
 
                 match m3u8_rs::parse_media_playlist_res(&m3u8_media_bytes) {
-                    Ok(media_playlist) => media_playlist,
+                    Ok(media_playlist) => (media_playlist_url, media_playlist),
                     Err(_) => anyhow::bail!("failed to parse m3u8 media playlist"),
                 }
             }
@@ -418,7 +421,7 @@ impl Downloader {
                     anyhow::bail!("is iframe media playlist");
                 }
 
-                playlist
+                (m3u8_url, playlist)
             }
             Err(_) => anyhow::bail!("failed to parse m3u8"),
         };
@@ -435,21 +438,28 @@ impl Downloader {
         let mut total_bytes_estimation = None;
 
         for segment in media_playlist.segments {
-            let segment_url = match m3u8_url.join(&segment.uri) {
+            let segment_url = match media_playlist_url.join(&segment.uri) {
                 Ok(segment_url) => segment_url,
                 Err(err) => {
                     self.error_cleanup_progress_bar(&progress_bar, sub_progresses_index);
                     return Err(err).with_context(|| "failed to create m3u8 segment url");
                 }
             };
-            let response =
-                match get_response(self.client.as_ref(), segment_url, self.user_agent.as_deref(), referer).await {
-                    Ok(response) => response,
-                    Err(err) => {
-                        self.error_cleanup_progress_bar(&progress_bar, sub_progresses_index);
-                        return Err(err).with_context(|| "failed to get segment response");
-                    }
-                };
+            let response = match get_response(
+                self.client.as_ref(),
+                segment_url,
+                self.user_agent.as_deref(),
+                referer,
+                None,
+            )
+            .await
+            {
+                Ok(response) => response,
+                Err(err) => {
+                    self.error_cleanup_progress_bar(&progress_bar, sub_progresses_index);
+                    return Err(err).with_context(|| "failed to get segment response");
+                }
+            };
             let mut input_stream = response.bytes_stream_resumable();
 
             while let Some(item) = input_stream.next().await {
@@ -811,6 +821,7 @@ pub(crate) async fn get_response<U: IntoUrl>(
     url: U,
     user_agent: Option<&str>,
     referer: Option<&str>,
+    extra_headers: Option<&[(HeaderName, &str)]>,
 ) -> Result<reqwest_partial_retry::ResumableResponse, anyhow::Error> {
     let client = client.unwrap_or(DEFAULT_RETRY_CLIENT.deref());
     let mut request = client.get(url);
@@ -821,6 +832,12 @@ pub(crate) async fn get_response<U: IntoUrl>(
 
     if let Some(referer) = referer {
         request = request.header(reqwest::header::REFERER, referer);
+    }
+
+    if let Some(extra_headers) = extra_headers {
+        for (header, value) in extra_headers {
+            request = request.header(header, *value);
+        }
     }
 
     let response = client
@@ -842,16 +859,23 @@ pub(crate) async fn get_page_bytes<U: IntoUrl>(
     url: U,
     user_agent: Option<&str>,
     referer: Option<&str>,
+    extra_headers: Option<&[(HeaderName, &str)]>,
 ) -> Result<bytes::Bytes, anyhow::Error> {
-    get_response_bytes(get_response(None, url, user_agent, referer).await?.response()).await
+    get_response_bytes(
+        get_response(None, url, user_agent, referer, extra_headers)
+            .await?
+            .response(),
+    )
+    .await
 }
 
 pub(crate) async fn get_page_text<U: IntoUrl>(
     url: U,
     user_agent: Option<&str>,
     referer: Option<&str>,
+    extra_headers: Option<&[(HeaderName, &str)]>,
 ) -> Result<String, anyhow::Error> {
-    get_response(None, url, user_agent, referer)
+    get_response(None, url, user_agent, referer, extra_headers)
         .await?
         .response()
         .text()
@@ -863,8 +887,9 @@ pub(crate) async fn get_page_json<U: IntoUrl>(
     url: U,
     user_agent: Option<&str>,
     referer: Option<&str>,
+    extra_headers: Option<&[(HeaderName, &str)]>,
 ) -> Result<serde_json::Value, anyhow::Error> {
-    get_response(None, url, user_agent, referer)
+    get_response(None, url, user_agent, referer, extra_headers)
         .await?
         .response()
         .json()

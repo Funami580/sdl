@@ -44,14 +44,14 @@ macro_rules! exists_downloader_for_url {
 }
 
 macro_rules! find_downloader_for_url {
-    ($driver:expr, $url:expr, $dl:ident $(, $tail:ident)* $(,)?) => {
+    ($driver:expr, $browser_visible:expr, $url:expr, $dl:ident $(, $tail:ident)* $(,)?) => {
         if <$dl>::supports_url($url).await {
-            Some(DispatchDownloader::from(<$dl>::new($driver, $url.to_owned())))
+            Some(DispatchDownloader::from(<$dl>::new($driver, $browser_visible, $url.to_owned())))
         } else {
-            find_downloader_for_url!($driver, $url, $($tail),*)
+            find_downloader_for_url!($driver, $browser_visible, $url, $($tail),*)
         }
     };
-    ($driver:expr, $url:expr $(,)?) => {
+    ($driver:expr, $browser_visible:expr, $url:expr $(,)?) => {
         None
     };
 }
@@ -69,10 +69,11 @@ macro_rules! create_functions_for_extractors {
         }
 
         pub async fn find_downloader_for_url<'driver>(
-            driver: &'driver mut thirtyfour::WebDriver,
+            driver: &'driver thirtyfour::WebDriver,
+            browser_visible: bool,
             url: &str,
         ) -> Option<DispatchDownloader<'driver>> {
-            find_downloader_for_url!(driver, url, $($dl),*)
+            find_downloader_for_url!(driver, browser_visible, url, $($dl),*)
         }
     };
     () => {};
@@ -333,7 +334,7 @@ pub trait InstantiatedDownloader {
 }
 
 pub trait Downloader<'driver>: InstantiatedDownloader {
-    fn new(driver: &'driver mut thirtyfour::WebDriver, url: String) -> Self;
+    fn new(driver: &'driver thirtyfour::WebDriver, browser_visible: bool, url: String) -> Self;
 
     async fn supports_url(url: &str) -> bool;
 }

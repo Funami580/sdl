@@ -1,21 +1,24 @@
-use vidoza::Vidoza;
+use bitmask_enum::bitmask;
 
 use crate::download;
 use crate::extractors::dummy::Dummy;
 use crate::extractors::filemoon::Filemoon;
 use crate::extractors::streamtape::Streamtape;
+use crate::extractors::vidoza::Vidoza;
+use crate::extractors::vidplay::Vidplay;
 use crate::extractors::voe::Voe;
 
 pub mod dummy;
 pub mod filemoon;
 pub mod streamtape;
 pub mod vidoza;
+pub mod vidplay;
 pub mod voe;
 
 macro_rules! normalized_name {
     ($extractor:expr, $ext:ty $(, $tail:ty)* $(,)?) => {
-        if $extractor.eq_ignore_ascii_case(stringify!($ext)) {
-            Some(stringify!($ext))
+        if <$ext>::NAMES.iter().any(|name| $extractor.eq_ignore_ascii_case(name)) {
+            Some(<$ext>::NAME)
         } else {
             normalized_name!($extractor, $($tail),*)
         }
@@ -27,7 +30,7 @@ macro_rules! normalized_name {
 
 macro_rules! exists_extractor_with_name {
     ($extractor:expr, $ext:ty $(, $tail:ty)* $(,)?) => {
-        if $extractor.eq_ignore_ascii_case(stringify!($ext)) {
+        if <$ext>::NAMES.iter().any(|name| $extractor.eq_ignore_ascii_case(name)) {
             true
         } else {
             exists_extractor_with_name!($extractor, $($tail),*)
@@ -41,7 +44,7 @@ macro_rules! exists_extractor_with_name {
 macro_rules! exists_extractor_for_url {
     ($url:expr, $extractor:expr, $ext:ty $(, $tail:ty)* $(,)?) => {
         if let Some(extractor_name) = $extractor {
-            if extractor_name.eq_ignore_ascii_case(stringify!($ext)) {
+            if <$ext>::NAMES.iter().any(|name| extractor_name.eq_ignore_ascii_case(name)) {
                 <$ext>::supports_url($url).await.unwrap_or(true)
             } else {
                 exists_extractor_for_url!($url, $extractor, $($tail),*)
@@ -56,6 +59,19 @@ macro_rules! exists_extractor_for_url {
     };
     ($url:expr, $extractor:expr $(,)?) => {
         false
+    };
+}
+
+macro_rules! extractor_supports_source {
+    ($extractor:expr, $ext:ty $(, $tail:ty)* $(,)?) => {
+        if <$ext>::NAMES.iter().any(|name| $extractor.eq_ignore_ascii_case(name)) {
+            Some(<$ext>::supported_from().contains(SupportedFrom::Source))
+        } else {
+            extractor_supports_source!($extractor, $($tail),*)
+        }
+    };
+    ($extractor:expr $(,)?) => {
+        None
     };
 }
 
@@ -74,7 +90,7 @@ macro_rules! extract_video_url {
 
 macro_rules! extract_video_url_with_extractor_from_url {
     ($url:expr, $extractor:expr, $user_agent:expr, $referer:expr, $ext:ty $(, $tail:ty)* $(,)?) => {
-        if $extractor.eq_ignore_ascii_case(stringify!($ext)) {
+        if <$ext>::NAMES.iter().any(|name| $extractor.eq_ignore_ascii_case(name)) {
             if <$ext>::supports_url($url).await.unwrap_or(true) {
                 Some(<$ext>::extract_video_url(ExtractFrom::Url { url: $url.to_owned(), user_agent: $user_agent, referer: $referer }).await)
             } else {
@@ -91,7 +107,7 @@ macro_rules! extract_video_url_with_extractor_from_url {
 
 macro_rules! extract_video_url_with_extractor_from_url_unchecked {
     ($url:expr, $extractor:expr, $user_agent:expr, $referer:expr, $ext:ty $(, $tail:ty)* $(,)?) => {
-        if $extractor.eq_ignore_ascii_case(stringify!($ext)) {
+        if <$ext>::NAMES.iter().any(|name| $extractor.eq_ignore_ascii_case(name)) {
             Some(<$ext>::extract_video_url(ExtractFrom::Url { url: $url.to_owned(), user_agent: $user_agent, referer: $referer }).await)
         } else {
             extract_video_url_with_extractor_from_url_unchecked!($url, $extractor, $user_agent, $referer, $($tail),*)
@@ -104,7 +120,7 @@ macro_rules! extract_video_url_with_extractor_from_url_unchecked {
 
 macro_rules! extract_video_url_with_extractor_from_source {
     ($source:expr, $extractor:expr, $ext:ty $(, $tail:ty)* $(,)?) => {
-        if $extractor.eq_ignore_ascii_case(stringify!($ext)) {
+        if <$ext>::NAMES.iter().any(|name| $extractor.eq_ignore_ascii_case(name)) {
             Some(<$ext>::extract_video_url(ExtractFrom::Source($source)).await)
         } else {
             extract_video_url_with_extractor_from_source!($source, $extractor, $($tail),*)
@@ -127,6 +143,10 @@ macro_rules! create_functions_for_extractors {
 
         pub async fn exists_extractor_for_url(url: &str, extractor: Option<&str>) -> bool {
             exists_extractor_for_url!(url, extractor, $($ext),*)
+        }
+
+        pub fn extractor_supports_source(extractor: &str) -> Option<bool> {
+            extractor_supports_source!(extractor, $($ext),*)
         }
 
         pub async fn extract_video_url(url: &str, user_agent: Option<String>, referer: Option<String>) -> Option<Result<ExtractedVideo, anyhow::Error>> {
@@ -153,6 +173,7 @@ create_functions_for_extractors! {
     Filemoon,
     Streamtape,
     Vidoza,
+    Vidplay,
     Voe,
 }
 
@@ -173,10 +194,16 @@ impl ExtractFrom {
                 url,
                 user_agent,
                 referer: referer_input,
-            } => download::get_page_text(url, user_agent.as_deref(), referer_input.as_deref().or(referer)).await,
+            } => download::get_page_text(url, user_agent.as_deref(), referer_input.as_deref().or(referer), None).await,
             ExtractFrom::Source(source) => Ok(source),
         }
     }
+}
+
+#[bitmask]
+pub enum SupportedFrom {
+    Url,
+    Source,
 }
 
 #[derive(Debug, Clone)]
@@ -186,6 +213,11 @@ pub struct ExtractedVideo {
 }
 
 pub trait Extractor {
+    const NAME: &'static str;
+    const NAMES: &'static [&'static str];
+
+    fn supported_from() -> SupportedFrom;
+
     async fn supports_url(url: &str) -> Option<bool>;
 
     async fn extract_video_url(from: ExtractFrom) -> Result<ExtractedVideo, anyhow::Error>;

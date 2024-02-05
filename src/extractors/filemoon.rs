@@ -2,12 +2,19 @@ use once_cell::sync::Lazy;
 use regex::Regex;
 
 use super::utils::is_url_host_and_has_path;
-use super::{ExtractFrom, ExtractedVideo, Extractor};
+use super::{ExtractFrom, ExtractedVideo, Extractor, SupportedFrom};
 use crate::extractors::utils::decode_packed_codes;
 
 pub struct Filemoon;
 
 impl Extractor for Filemoon {
+    const NAME: &'static str = "Filemoon";
+    const NAMES: &'static [&'static str] = &["Filemoon"];
+
+    fn supported_from() -> SupportedFrom {
+        SupportedFrom::all()
+    }
+
     async fn supports_url(url: &str) -> Option<bool> {
         Some(is_url_host_and_has_path(url, "filemoon.sx", true, true))
     }

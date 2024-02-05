@@ -3,11 +3,18 @@ use once_cell::sync::Lazy;
 use regex::Regex;
 
 use super::utils::is_url_host_and_has_path;
-use super::{ExtractFrom, ExtractedVideo, Extractor};
+use super::{ExtractFrom, ExtractedVideo, Extractor, SupportedFrom};
 
 pub struct Vidoza;
 
 impl Extractor for Vidoza {
+    const NAME: &'static str = "Vidoza";
+    const NAMES: &'static [&'static str] = &["Vidoza"];
+
+    fn supported_from() -> SupportedFrom {
+        SupportedFrom::all()
+    }
+
     async fn supports_url(url: &str) -> Option<bool> {
         Some(is_url_host_and_has_path(url, "vidoza.net", true, true))
     }

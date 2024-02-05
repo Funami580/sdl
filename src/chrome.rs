@@ -209,7 +209,7 @@ impl<'a> ChromeDriver<'a> {
             }
         };
 
-        let github_response = download::get_page_json(UBLOCK_GITHUB_API_URL, None, None).await?;
+        let github_response = download::get_page_json(UBLOCK_GITHUB_API_URL, None, None, None).await?;
 
         const UNEXPECT_JSON_ERR_MSG: &str = "unexpected GitHub API json response";
         let serde_json::Value::Object(json_object) = github_response else {

@@ -13,20 +13,28 @@ use super::{
 };
 use crate::downloaders::utils::sleep_random;
 use crate::downloaders::Downloader;
-use crate::extractors::{exists_extractor_with_name, extract_video_url_with_extractor_from_source};
+use crate::extractors::{
+    exists_extractor_with_name, extract_video_url_with_extractor_from_source,
+    extract_video_url_with_extractor_from_url_unchecked, extractor_supports_source,
+};
 
 static URL_REGEX: Lazy<Regex> =
     Lazy::new(|| Regex::new(r#"(?i)^https?://(?:www\.)?aniwave\.to/watch/([^/\s]+)(?:/ep-([^/\s]+))?$"#).unwrap());
 
 pub struct Aniwave<'driver> {
-    driver: &'driver mut thirtyfour::WebDriver,
+    driver: &'driver thirtyfour::WebDriver,
+    browser_visible: bool,
     parsed_url: ParsedUrl,
 }
 
 impl<'driver> Downloader<'driver> for Aniwave<'driver> {
-    fn new(driver: &'driver mut thirtyfour::WebDriver, url: String) -> Self {
+    fn new(driver: &'driver thirtyfour::WebDriver, browser_visible: bool, url: String) -> Self {
         let parsed_url = ParsedUrl::try_from(&*url).unwrap();
-        Self { driver, parsed_url }
+        Self {
+            driver,
+            browser_visible,
+            parsed_url,
+        }
     }
 
     async fn supports_url(url: &str) -> bool {
@@ -37,6 +45,32 @@ impl<'driver> Downloader<'driver> for Aniwave<'driver> {
 impl InstantiatedDownloader for Aniwave<'_> {
     async fn get_series_info(&self) -> Result<super::SeriesInfo, anyhow::Error> {
         self.driver.goto(self.parsed_url.get_anime_url()).await?;
+
+        if self
+            .driver
+            .source()
+            .await
+            .with_context(|| "failed to get page source")?
+            .contains("/waf-captcha-verify")
+        {
+            if self.browser_visible {
+                log::warn!("Captcha detected. Please solve the captcha within 30 seconds");
+                tokio::time::sleep(Duration::from_secs(30)).await;
+
+                if self
+                    .driver
+                    .source()
+                    .await
+                    .with_context(|| "failed to get page source")?
+                    .contains("/waf-captcha-verify")
+                {
+                    anyhow::bail!("captcha detected");
+                }
+            } else {
+                log::error!("Captcha detected. Restart sdl with --debug and solve the captcha");
+                anyhow::bail!("captcha detected");
+            }
+        }
 
         let title = self
             .driver
@@ -427,21 +461,33 @@ impl<'driver, 'url, F: FnMut() -> Duration> Scraper<'driver, 'url, F> {
                     continue 'video_loop;
                 };
 
-                video_frame
-                    .enter_frame()
-                    .await
-                    .with_context(|| "failed to enter video frame")?;
+                let extracted_video = if extractor_supports_source(stream_platform_name).unwrap() {
+                    video_frame
+                        .enter_frame()
+                        .await
+                        .with_context(|| "failed to enter video frame")?;
 
-                let Ok(iframe_source) = self.driver.source().await else {
-                    log::trace!("Failed to get iframe source");
+                    let Ok(iframe_source) = self.driver.source().await else {
+                        log::trace!("Failed to get iframe source");
+                        self.driver.enter_parent_frame().await.unwrap();
+                        continue 'server_loop;
+                    };
+
                     self.driver.enter_parent_frame().await.unwrap();
-                    continue 'server_loop;
-                };
 
-                self.driver.enter_parent_frame().await.unwrap();
-                let extracted_video = extract_video_url_with_extractor_from_source(iframe_source, stream_platform_name)
-                    .await
-                    .unwrap();
+                    extract_video_url_with_extractor_from_source(iframe_source, stream_platform_name)
+                        .await
+                        .unwrap()
+                } else {
+                    let Ok(Some(iframe_url)) = video_frame.attr("src").await else {
+                        log::trace!("Failed to find src attribute of iframe");
+                        continue 'server_loop;
+                    };
+
+                    extract_video_url_with_extractor_from_url_unchecked(&iframe_url, stream_platform_name, None, None)
+                        .await
+                        .unwrap()
+                };
 
                 match extracted_video {
                     Ok(extracted_video) => {

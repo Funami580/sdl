@@ -273,7 +273,7 @@ async fn do_after_chrome_driver(
             return true;
         }
     } else {
-        let series_downloader = downloaders::find_downloader_for_url(chrome.unwrap(), url)
+        let series_downloader = downloaders::find_downloader_for_url(chrome.unwrap(), debug, url)
             .await
             .unwrap();
         let download_settings = args.get_download_settings();

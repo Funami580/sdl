@@ -22,12 +22,12 @@ static URL_REGEX: Lazy<Regex> = Lazy::new(|| {
 });
 
 pub struct AniWorldSerienStream<'driver> {
-    driver: &'driver mut WebDriver,
+    driver: &'driver WebDriver,
     parsed_url: ParsedUrl,
 }
 
 impl<'driver> Downloader<'driver> for AniWorldSerienStream<'driver> {
-    fn new(driver: &'driver mut WebDriver, url: String) -> Self {
+    fn new(driver: &'driver WebDriver, _browser_visible: bool, url: String) -> Self {
         let parsed_url = ParsedUrl::try_from(&*url).unwrap();
         Self { driver, parsed_url }
     }

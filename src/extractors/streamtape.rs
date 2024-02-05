@@ -4,11 +4,18 @@ use regex::Regex;
 use url::Url;
 
 use super::utils::is_url_host_and_has_path;
-use super::{ExtractFrom, ExtractedVideo, Extractor};
+use super::{ExtractFrom, ExtractedVideo, Extractor, SupportedFrom};
 
 pub struct Streamtape;
 
 impl Extractor for Streamtape {
+    const NAME: &'static str = "Streamtape";
+    const NAMES: &'static [&'static str] = &["Streamtape"];
+
+    fn supported_from() -> SupportedFrom {
+        SupportedFrom::all()
+    }
+
     async fn supports_url(url: &str) -> Option<bool> {
         Some(is_url_host_and_has_path(url, "streamtape.com", true, true))
     }

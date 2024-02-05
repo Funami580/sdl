@@ -2,11 +2,18 @@ use anyhow::Context;
 use once_cell::sync::Lazy;
 use regex::Regex;
 
-use super::{ExtractFrom, ExtractedVideo, Extractor};
+use super::{ExtractFrom, ExtractedVideo, Extractor, SupportedFrom};
 
 pub struct Voe;
 
 impl Extractor for Voe {
+    const NAME: &'static str = "Voe";
+    const NAMES: &'static [&'static str] = &["Voe"];
+
+    fn supported_from() -> SupportedFrom {
+        SupportedFrom::all()
+    }
+
     async fn supports_url(_url: &str) -> Option<bool> {
         None
     }
