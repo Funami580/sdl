@@ -16,7 +16,10 @@ impl Extractor for Filemoon {
     }
 
     async fn supports_url(url: &str) -> Option<bool> {
-        Some(is_url_host_and_has_path(url, "filemoon.sx", true, true))
+        Some(
+            is_url_host_and_has_path(url, "filemoon.sx", true, true)
+                || is_url_host_and_has_path(url, "kerapoxy.cc", true, true),
+        )
     }
 
     async fn extract_video_url(from: ExtractFrom) -> Result<ExtractedVideo, anyhow::Error> {
