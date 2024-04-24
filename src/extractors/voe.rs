@@ -37,7 +37,7 @@ impl Voe {
                     .decode(video_url.as_str())
                     .ok()
                     .and_then(|decoded_url| String::from_utf8(decoded_url).ok())
-                    .unwrap_or(video_url.as_str().to_string());
+                    .unwrap_or_else(|| video_url.as_str().to_string());
 
                 ExtractedVideo { url, referer: None }
             })
