@@ -23,9 +23,10 @@ impl Extractor for Filemoon {
     }
 
     async fn extract_video_url(from: ExtractFrom) -> Result<ExtractedVideo, anyhow::Error> {
-        static SCRIPT_REGEX: Lazy<Regex> =
-            Lazy::new(|| Regex::new(r#"(?s)<script\s+[^>]*?data-cfasync="false"[^>]*>(.+?)</script>"#).unwrap());
-        static VIDEO_URL_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r#"file:"([^"]+)""#).unwrap());
+        static SCRIPT_REGEX: Lazy<Regex> = Lazy::new(|| {
+            Regex::new(r#"(?s)<script\s+[^>]*?data-cfasync=["']?false["']?[^>]*>(.+?)</script>"#).unwrap()
+        });
+        static VIDEO_URL_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r#"(?s)file:\s*"([^"]+\.m3u8[^"]*)""#).unwrap());
 
         let source = from.get_source(None).await?;
 
