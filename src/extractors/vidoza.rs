@@ -16,7 +16,10 @@ impl Extractor for Vidoza {
     }
 
     async fn supports_url(url: &str) -> Option<bool> {
-        Some(is_url_host_and_has_path(url, "vidoza.net", true, true))
+        Some(
+            is_url_host_and_has_path(url, "vidoza.net", true, true)
+                || is_url_host_and_has_path(url, "videzz.net", true, true),
+        )
     }
 
     async fn extract_video_url(from: ExtractFrom) -> Result<ExtractedVideo, anyhow::Error> {
