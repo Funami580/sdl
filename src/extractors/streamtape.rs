@@ -9,7 +9,7 @@ use super::{ExtractFrom, ExtractedVideo, Extractor, SupportedFrom};
 pub struct Streamtape;
 
 impl Extractor for Streamtape {
-    const NAME: &'static str = "Streamtape";
+    const DISPLAY_NAME: &'static str = "Streamtape";
     const NAMES: &'static [&'static str] = &["Streamtape"];
 
     fn supported_from() -> SupportedFrom {

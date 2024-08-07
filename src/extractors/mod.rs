@@ -18,7 +18,7 @@ pub mod voe;
 macro_rules! normalized_name {
     ($extractor:expr, $ext:ty $(, $tail:ty)* $(,)?) => {
         if <$ext>::NAMES.iter().any(|name| $extractor.eq_ignore_ascii_case(name)) {
-            Some(<$ext>::NAME)
+            Some(<$ext>::DISPLAY_NAME)
         } else {
             normalized_name!($extractor, $($tail),*)
         }
@@ -213,7 +213,7 @@ pub struct ExtractedVideo {
 }
 
 pub trait Extractor {
-    const NAME: &'static str;
+    const DISPLAY_NAME: &'static str;
     const NAMES: &'static [&'static str];
 
     fn supported_from() -> SupportedFrom;

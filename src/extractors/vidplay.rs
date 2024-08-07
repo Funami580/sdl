@@ -15,7 +15,7 @@ const KEYS_URL: &str = "https://raw.githubusercontent.com/KillerDogeEmpire/vidpl
 pub struct Vidplay;
 
 impl Extractor for Vidplay {
-    const NAME: &'static str = "Vidplay/MyCloud";
+    const DISPLAY_NAME: &'static str = "Vidplay/MyCloud";
     const NAMES: &'static [&'static str] = &["Vidplay", "MyCloud"];
 
     fn supported_from() -> SupportedFrom {

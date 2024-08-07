@@ -8,7 +8,7 @@ use crate::extractors::utils::decode_packed_codes;
 pub struct Filemoon;
 
 impl Extractor for Filemoon {
-    const NAME: &'static str = "Filemoon";
+    const DISPLAY_NAME: &'static str = "Filemoon";
     const NAMES: &'static [&'static str] = &["Filemoon"];
 
     fn supported_from() -> SupportedFrom {

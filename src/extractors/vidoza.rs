@@ -8,7 +8,7 @@ use super::{ExtractFrom, ExtractedVideo, Extractor, SupportedFrom};
 pub struct Vidoza;
 
 impl Extractor for Vidoza {
-    const NAME: &'static str = "Vidoza";
+    const DISPLAY_NAME: &'static str = "Vidoza";
     const NAMES: &'static [&'static str] = &["Vidoza"];
 
     fn supported_from() -> SupportedFrom {

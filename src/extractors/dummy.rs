@@ -3,7 +3,7 @@ use super::{ExtractFrom, ExtractedVideo, Extractor, SupportedFrom};
 pub struct Dummy;
 
 impl Extractor for Dummy {
-    const NAME: &'static str = "Dummy";
+    const DISPLAY_NAME: &'static str = "Dummy";
     const NAMES: &'static [&'static str] = &["Dummy"];
 
     fn supported_from() -> SupportedFrom {

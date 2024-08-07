@@ -8,7 +8,7 @@ use super::{ExtractFrom, ExtractedVideo, Extractor, SupportedFrom};
 pub struct Voe;
 
 impl Extractor for Voe {
-    const NAME: &'static str = "Voe";
+    const DISPLAY_NAME: &'static str = "Voe";
     const NAMES: &'static [&'static str] = &["Voe"];
 
     fn supported_from() -> SupportedFrom {
