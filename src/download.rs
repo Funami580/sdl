@@ -38,7 +38,11 @@ static DEFAULT_RETRY_CLIENT_NO_REDIRECT: Lazy<reqwest_partial_retry::Client> = L
         .unwrap()
         .resumable_with_config(
             Config::builder()
-                .retry_policy(ExponentialBackoffBuilder::default().build_with_max_retries(5))
+                .retry_policy(
+                    ExponentialBackoffBuilder::default()
+                        .retry_bounds(Duration::from_secs(1), Duration::from_secs(10))
+                        .build_with_max_retries(5),
+                )
                 .retryable_strategy(CustomRetryStrategy)
                 .stream_timeout(Some(Duration::from_secs(60)))
                 .build(),
@@ -213,6 +217,7 @@ impl Downloader {
                     Config::builder()
                         .retry_policy(
                             ExponentialBackoffBuilder::default()
+                                .retry_bounds(Duration::from_secs(1), Duration::from_secs(10))
                                 .build_with_max_retries(retries.map(|x| x.get()).unwrap_or(u32::MAX)),
                         )
                         .retryable_strategy(DefaultRetryableStrategy)
