@@ -59,3 +59,5 @@ path = "src/lib.rs"
 
 [profile.release]
 lto = true
+strip = "symbols"
+codegen-units = 1
