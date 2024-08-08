@@ -11,10 +11,12 @@ use anyhow::Context;
 use futures_util::StreamExt;
 use once_cell::sync::Lazy;
 use reqwest::header::HeaderName;
+use reqwest::redirect::Policy;
 use reqwest::IntoUrl;
 use reqwest_partial_retry::{ClientExt, Config};
 use reqwest_retry::policies::ExponentialBackoffBuilder;
 use reqwest_retry::DefaultRetryableStrategy;
+use retry::strategy::CustomRetryStrategy;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio_stream::wrappers::UnboundedReceiverStream;
@@ -27,16 +29,17 @@ use crate::utils::remove_file_ignore_not_exists;
 const DEFAULT_USER_AGENT: &str =
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Safari/537.36";
 
-static DEFAULT_RETRY_CLIENT: Lazy<reqwest_partial_retry::Client> = Lazy::new(|| {
+static DEFAULT_RETRY_CLIENT_NO_REDIRECT: Lazy<reqwest_partial_retry::Client> = Lazy::new(|| {
     reqwest::Client::builder()
         .user_agent(DEFAULT_USER_AGENT)
         .connect_timeout(Duration::from_secs(20))
+        .redirect(Policy::none()) // redirects handled in get_response
         .build()
         .unwrap()
         .resumable_with_config(
             Config::builder()
                 .retry_policy(ExponentialBackoffBuilder::default().build_with_max_retries(5))
-                .retryable_strategy(DefaultRetryableStrategy)
+                .retryable_strategy(CustomRetryStrategy)
                 .stream_timeout(Some(Duration::from_secs(60)))
                 .build(),
         )
@@ -823,29 +826,52 @@ pub(crate) async fn get_response<U: IntoUrl>(
     referer: Option<&str>,
     extra_headers: Option<&[(HeaderName, &str)]>,
 ) -> Result<reqwest_partial_retry::ResumableResponse, anyhow::Error> {
-    let client = client.unwrap_or(DEFAULT_RETRY_CLIENT.deref());
-    let mut request = client.get(url);
+    // We need to handle redirects ourself, because reqwest changes the Referer
+    // header on redirection
+    let client = client.unwrap_or(DEFAULT_RETRY_CLIENT_NO_REDIRECT.deref());
+    let mut last_url = url.as_str().to_string();
+    let mut redirect_count = 0u32;
 
-    if let Some(user_agent) = user_agent {
-        request = request.header(reqwest::header::USER_AGENT, user_agent);
-    }
+    loop {
+        let mut request = client.get(last_url);
 
-    if let Some(referer) = referer {
-        request = request.header(reqwest::header::REFERER, referer);
-    }
+        if let Some(user_agent) = user_agent {
+            request = request.header(reqwest::header::USER_AGENT, user_agent);
+        }
 
-    if let Some(extra_headers) = extra_headers {
-        for (header, value) in extra_headers {
-            request = request.header(header, *value);
+        if let Some(referer) = referer {
+            request = request.header(reqwest::header::REFERER, referer);
+        }
+
+        if let Some(extra_headers) = extra_headers {
+            for (header, value) in extra_headers {
+                request = request.header(header, *value);
+            }
+        }
+
+        let response = client
+            .execute_resumable(request.build().with_context(|| "failed to build request")?)
+            .await
+            .with_context(|| "failed to request url")?;
+
+        let is_redirect_code = [301, 308, 302, 303, 307].contains(&response.status().as_u16());
+        let location_header = response.headers().get(reqwest::header::LOCATION);
+
+        match (is_redirect_code, location_header) {
+            (true, Some(redirect_url)) => {
+                if redirect_count >= 10 {
+                    anyhow::bail!("more than 10 redirects");
+                }
+
+                redirect_count += 1;
+                last_url = redirect_url
+                    .to_str()
+                    .with_context(|| "redirect url could not be converted to string")?
+                    .to_string();
+            }
+            _ => return Ok(response),
         }
     }
-
-    let response = client
-        .execute_resumable(request.build().with_context(|| "failed to build request")?)
-        .await
-        .with_context(|| "failed to request url")?;
-
-    Ok(response)
 }
 
 pub(crate) async fn get_response_bytes(response: reqwest::Response) -> Result<bytes::Bytes, anyhow::Error> {
@@ -895,6 +921,132 @@ pub(crate) async fn get_page_json<U: IntoUrl>(
         .json()
         .await
         .with_context(|| "failed to parse response body as json")
+}
+
+mod retry {
+    // Copied from reqwest_retry::DefaultRetryableStrategy
+    pub(crate) mod strategy {
+        use reqwest::StatusCode;
+        use reqwest_retry::{Retryable, RetryableStrategy};
+
+        pub struct CustomRetryStrategy;
+
+        impl RetryableStrategy for CustomRetryStrategy {
+            fn handle(&self, res: &Result<reqwest::Response, reqwest_middleware::Error>) -> Option<Retryable> {
+                match res {
+                    Ok(success) => default_on_request_success(success),
+                    Err(error) => default_on_request_failure(error),
+                }
+            }
+        }
+
+        /// Default request success retry strategy.
+        ///
+        /// Will only retry if:
+        /// * The status was 5XX (server error)
+        /// * The status was 408 (request timeout) or 429 (too many requests)
+        ///
+        /// Note that success here means that the request finished without
+        /// interruption, not that it was logically OK.
+        pub fn default_on_request_success(success: &reqwest::Response) -> Option<Retryable> {
+            let status = success.status();
+            if status.is_server_error() {
+                Some(Retryable::Transient)
+            } else if status.is_client_error()
+                && status != StatusCode::REQUEST_TIMEOUT
+                && status != StatusCode::TOO_MANY_REQUESTS
+            {
+                Some(Retryable::Fatal)
+            } else if status.is_success() {
+                None
+            } else if status == StatusCode::REQUEST_TIMEOUT || status == StatusCode::TOO_MANY_REQUESTS {
+                Some(Retryable::Transient)
+            } else if [301, 308, 302, 303, 307].contains(&status.as_u16()) {
+                // NEW: now redirects won't be fatal anymore
+                None
+            } else {
+                Some(Retryable::Fatal)
+            }
+        }
+
+        /// Default request failure retry strategy.
+        ///
+        /// Will only retry if the request failed due to a network error
+        pub fn default_on_request_failure(error: &reqwest_middleware::Error) -> Option<Retryable> {
+            match error {
+                // If something fails in the middleware we're screwed.
+                reqwest_middleware::Error::Middleware(_) => Some(Retryable::Fatal),
+                reqwest_middleware::Error::Reqwest(error) => {
+                    #[cfg(not(target_arch = "wasm32"))]
+                    let is_connect = error.is_connect();
+                    #[cfg(target_arch = "wasm32")]
+                    let is_connect = false;
+                    if error.is_timeout() || is_connect {
+                        Some(Retryable::Transient)
+                    } else if error.is_body() || error.is_decode() || error.is_builder() || error.is_redirect() {
+                        Some(Retryable::Fatal)
+                    } else if error.is_request() {
+                        // It seems that hyper::Error(IncompleteMessage) is not correctly handled by
+                        // reqwest. Here we check if the Reqwest error was
+                        // originated by hyper and map it consistently.
+                        #[cfg(not(target_arch = "wasm32"))]
+                        if let Some(hyper_error) = get_source_error_type::<hyper::Error>(&error) {
+                            // The hyper::Error(IncompleteMessage) is raised if the HTTP response is well
+                            // formatted but does not contain all the bytes.
+                            // This can happen when the server has started sending back the response but the
+                            // connection is cut halfway thorugh. We can safely
+                            // retry the call, hence marking this error as [`Retryable::Transient`].
+                            // Instead hyper::Error(Canceled) is raised when the connection is
+                            // gracefully closed on the server side.
+                            if hyper_error.is_incomplete_message() || hyper_error.is_canceled() {
+                                Some(Retryable::Transient)
+
+                            // Try and downcast the hyper error to io::Error if
+                            // that is the
+                            // underlying error, and try and classify it.
+                            } else if let Some(io_error) = get_source_error_type::<std::io::Error>(hyper_error) {
+                                Some(classify_io_error(io_error))
+                            } else {
+                                Some(Retryable::Fatal)
+                            }
+                        } else {
+                            Some(Retryable::Fatal)
+                        }
+                        #[cfg(target_arch = "wasm32")]
+                        Some(Retryable::Fatal)
+                    } else {
+                        // We omit checking if error.is_status() since we check that already.
+                        // However, if Response::error_for_status is used the status will still
+                        // remain in the response object.
+                        None
+                    }
+                }
+            }
+        }
+
+        #[cfg(not(target_arch = "wasm32"))]
+        fn classify_io_error(error: &std::io::Error) -> Retryable {
+            match error.kind() {
+                std::io::ErrorKind::ConnectionReset | std::io::ErrorKind::ConnectionAborted => Retryable::Transient,
+                _ => Retryable::Fatal,
+            }
+        }
+
+        /// Downcasts the given err source into T.
+        #[cfg(not(target_arch = "wasm32"))]
+        fn get_source_error_type<T: std::error::Error + 'static>(err: &dyn std::error::Error) -> Option<&T> {
+            let mut source = err.source();
+
+            while let Some(err) = source {
+                if let Some(err) = err.downcast_ref::<T>() {
+                    return Some(err);
+                }
+
+                source = err.source();
+            }
+            None
+        }
+    }
 }
 
 fn is_m3u8_url(url: &Url) -> bool {
