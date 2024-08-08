@@ -20,7 +20,29 @@ impl Extractor for Voe {
     }
 
     async fn extract_video_url(from: ExtractFrom) -> Result<ExtractedVideo, anyhow::Error> {
-        let source = from.get_source(None).await?;
+        static REDIRECT_REGEX: Lazy<Regex> =
+            Lazy::new(|| Regex::new(r#"window\.location\.href *= *(?:'([^']+)'|"([^"]+)") *;"#).unwrap());
+
+        let (user_agent, referer) = match &from {
+            ExtractFrom::Url {
+                url: _,
+                user_agent,
+                referer,
+            } => (user_agent.clone(), referer.clone()),
+            ExtractFrom::Source(_) => (None, None),
+        };
+        let mut source = from.get_source(None).await?;
+
+        if let Some(redirect_url) = REDIRECT_REGEX.captures(&source).and_then(|captures| captures.get(1)) {
+            source = ExtractFrom::Url {
+                url: redirect_url.as_str().to_string(),
+                user_agent,
+                referer,
+            }
+            .get_source(None)
+            .await?;
+        }
+
         Self::extract1(&source).or_else(|_| Self::extract2(&source))
     }
 }
