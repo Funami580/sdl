@@ -1,7 +1,6 @@
 use once_cell::sync::Lazy;
 use regex::Regex;
 
-use super::utils::is_url_host_and_has_path;
 use super::{ExtractFrom, ExtractedVideo, Extractor, SupportedFrom};
 use crate::extractors::utils::decode_packed_codes;
 
@@ -9,17 +8,14 @@ pub struct Filemoon;
 
 impl Extractor for Filemoon {
     const DISPLAY_NAME: &'static str = "Filemoon";
-    const NAMES: &'static [&'static str] = &["Filemoon"];
+    const NAMES: &'static [&'static str] = &["Filemoon", "MoonF"];
 
     fn supported_from() -> SupportedFrom {
         SupportedFrom::all()
     }
 
-    async fn supports_url(url: &str) -> Option<bool> {
-        Some(
-            is_url_host_and_has_path(url, "filemoon.sx", true, true)
-                || is_url_host_and_has_path(url, "kerapoxy.cc", true, true),
-        )
+    async fn supports_url(_url: &str) -> Option<bool> {
+        None
     }
 
     async fn extract_video_url(from: ExtractFrom) -> Result<ExtractedVideo, anyhow::Error> {
