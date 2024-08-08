@@ -164,6 +164,58 @@ macro_rules! create_functions_for_extractors {
         pub async fn extract_video_url_with_extractor_from_source(source: String, extractor: &str) -> Option<Result<ExtractedVideo, anyhow::Error>> {
             extract_video_url_with_extractor_from_source!(source, extractor, $($ext),*)
         }
+
+        const _CHECK_UNIQUE_NAMES: () = {
+            let names_array = [$(<$ext>::NAMES),*];
+
+            let mut i = 0;
+            while i < names_array.len() {
+                let names = names_array[i];
+                i += 1;
+
+                let mut j = 0;
+                while j < names.len() {
+                    let name = names[j];
+                    j += 1;
+
+                    let mut count = 0;
+                    let mut i2 = 0;
+                    while i2 < names_array.len() {
+                        let names2 = names_array[i2];
+                        i2 += 1;
+
+                        let mut j2 = 0;
+                        while j2 < names2.len() {
+                            let name2 = names2[j2];
+                            j2 += 1;
+
+                            if name.len() == name2.len() {
+                                let mut equal = true;
+                                let bytes1 = name.as_bytes();
+                                let bytes2 = name2.as_bytes();
+                                let mut k = 0;
+                                while k < bytes1.len() {
+                                    let b1 = bytes1[k];
+                                    let b2 = bytes2[k];
+                                    k += 1;
+                                    if !b1.eq_ignore_ascii_case(&b2) {
+                                        equal = false;
+                                        break;
+                                    }
+                                }
+                                if equal {
+                                    count += 1;
+                                }
+                            }
+                        }
+                    }
+
+                    if count != 1 {
+                        panic!("Non-unique extractor name!");
+                    }
+                }
+            }
+        };
     };
     () => {};
 }
