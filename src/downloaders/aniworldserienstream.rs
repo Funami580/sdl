@@ -530,6 +530,8 @@ impl<'driver, 'url, F: FnMut() -> Duration> Scraper<'driver, 'url, F> {
                 .trim()
                 .to_owned();
 
+            log::trace!("Trying to use '{stream_platform_name}' stream server...");
+
             let extracted_video = extract_video_url_with_extractor_from_url_unchecked(
                 redirect_link.as_str(),
                 &stream_platform_name,

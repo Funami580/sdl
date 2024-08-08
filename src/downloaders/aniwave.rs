@@ -454,6 +454,8 @@ impl<'driver, 'url, F: FnMut() -> Duration> Scraper<'driver, 'url, F> {
                 .await
                 .with_context(|| "failed to find player div")?;
 
+            log::trace!("Trying to use '{stream_platform_name}' stream server...");
+
             'video_loop: for _ in 0..5 {
                 let Ok(video_frame) = self.driver.find(By::Css("div#player > iframe")).await else {
                     player_div.click().await.with_context(|| "failed to click player div")?;
