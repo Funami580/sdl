@@ -5,7 +5,6 @@ use crate::extractors::dummy::Dummy;
 use crate::extractors::filemoon::Filemoon;
 use crate::extractors::streamtape::Streamtape;
 use crate::extractors::vidoza::Vidoza;
-use crate::extractors::vidplay::Vidplay;
 use crate::extractors::voe::Voe;
 
 pub mod dummy;
@@ -225,7 +224,7 @@ create_functions_for_extractors! {
     Filemoon,
     Streamtape,
     Vidoza,
-    Vidplay,
+    // Vidplay,
     Voe,
 }
 
