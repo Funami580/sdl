@@ -4,9 +4,6 @@ Download multiple episodes from streaming sites
 **Warning: This project has been only tested on Linux, and is generally not well tested.**
 
 ## Supported sites
-### English
-* [Aniwave](https://aniwave.to)
-
 ### German
 * [AniWorld](https://aniworld.to)
 * [S.to](https://s.to)
@@ -21,17 +18,16 @@ Download multiple episodes from streaming sites
 ### Downloading a single episode
 By URL:
 ```bash
-sdl 'https://aniwave.to/watch/yuruyuri.p6q/ep-11'
+sdl 'https://aniworld.to/anime/stream/yuruyuri-happy-go-lily/staffel-1/episode-1'
 ```
 By specifying it explicitly:
 ```bash
-sdl -e 11 'https://aniwave.to/watch/yuruyuri.p6q'
+sdl -e 11 'https://aniworld.to/anime/stream/yuruyuri-happy-go-lily/staffel-2'
 ```
 
 ### Downloading an entire season
 By URL:
 ```bash
-sdl 'https://aniwave.to/watch/yuruyuri.p6q'
 sdl 'https://aniworld.to/anime/stream/yuruyuri-happy-go-lily/staffel-2'
 sdl 'https://aniworld.to/anime/stream/yuruyuri-happy-go-lily/filme'
 ```
@@ -43,7 +39,7 @@ sdl -s 0 'https://aniworld.to/anime/stream/yuruyuri-happy-go-lily'
 
 ### Downloading multiple episodes
 ```bash
-sdl -e 1,2-6,9 'https://aniwave.to/watch/yuruyuri.p6q'
+sdl -e 1,2-6,9 'https://aniworld.to/anime/stream/yuruyuri-happy-go-lily/staffel-2'
 ```
 
 ### Downloading multiple seasons
@@ -59,7 +55,6 @@ sdl 'https://aniworld.to/anime/stream/yuruyuri-happy-go-lily'
 ### Downloading in other languages
 ```bash
 sdl -t gersub 'https://s.to/serie/stream/higurashi-no-naku-koro-ni/staffel-1/episode-1'
-sdl -t engdub 'https://aniwave.to/watch/case-closed.myz/ep-1'
 ```
 Either dub or sub:
 ```bash

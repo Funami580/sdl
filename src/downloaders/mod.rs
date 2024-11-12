@@ -8,11 +8,9 @@ use enum_dispatch::enum_dispatch;
 use enum_iterator::Sequence;
 use tokio::sync::mpsc::UnboundedSender;
 
-use self::aniwave::Aniwave;
 use self::aniworldserienstream::AniWorldSerienStream;
 use crate::extractors::ExtractedVideo;
 
-pub mod aniwave;
 pub mod aniworldserienstream;
 
 macro_rules! enum_dispatch {
@@ -80,7 +78,6 @@ macro_rules! create_functions_for_extractors {
 }
 
 create_functions_for_extractors! {
-    Aniwave,
     AniWorldSerienStream,
 }
 
