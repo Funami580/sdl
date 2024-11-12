@@ -10,6 +10,7 @@ Download multiple episodes from streaming sites
 
 ## Supported extractors
 * Filemoon
+* Speedfiles
 * Streamtape
 * Vidoza
 * Voe
