@@ -13,7 +13,6 @@ pub mod filemoon;
 pub mod speedfiles;
 pub mod streamtape;
 pub mod vidoza;
-pub mod vidplay;
 pub mod voe;
 
 macro_rules! normalized_name {
@@ -227,7 +226,6 @@ create_functions_for_extractors! {
     Speedfiles,
     Streamtape,
     Vidoza,
-    // Vidplay,
     Voe,
 }
 
