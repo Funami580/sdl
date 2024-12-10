@@ -357,6 +357,10 @@ impl Downloader {
             self.update_progress(&progress_bar, downloaded, content_length);
         }
 
+        // Replace estimation with total size after download finished
+        // Useful if Content-Length was unavailable or inaccurate
+        self.update_progress(&progress_bar, downloaded, Some(downloaded));
+
         if let Err(err) = Self::clean_up_write(output_stream).await {
             self.clean_up_progress_bar(&progress_bar, sub_progresses_index);
             return Err(err);
@@ -738,6 +742,9 @@ impl Downloader {
             total_bytes_estimation =
                 Some(((downloaded_bytes as f64 * total_duration) / downloaded_duration).ceil() as u64);
         }
+
+        // Replace estimation with total size after download finished
+        self.update_progress(&progress_bar, downloaded_bytes, Some(downloaded_bytes));
 
         if let Err(err) = Self::clean_up_write(output_stream).await {
             self.clean_up_progress_bar(&progress_bar, sub_progresses_index);
