@@ -12,6 +12,7 @@ Download multiple episodes from streaming sites
 * Filemoon
 * Speedfiles
 * Streamtape
+* Vidmoly
 * Vidoza
 * Voe
 
