@@ -7,8 +7,12 @@ use std::path::PathBuf;
 use std::process::Stdio;
 use std::time::Duration;
 
+use aes::cipher::block_padding::{Padding as _, UnpadError};
+use aes::cipher::inout::InOutBuf;
+use aes::cipher::{BlockDecryptMut as _, KeyIvInit as _};
 use anyhow::Context;
 use futures_util::StreamExt;
+use m3u8_rs::KeyMethod;
 use once_cell::sync::Lazy;
 use reqwest::header::HeaderName;
 use reqwest::redirect::Policy;
@@ -416,8 +420,19 @@ impl Downloader {
                 let media_playlist_url = m3u8_url
                     .join(&highest_quality_variant.uri)
                     .with_context(|| "failed to create m3u8 media playlist url")?;
-                let m3u8_media_bytes =
-                    get_page_bytes(media_playlist_url.as_str(), self.user_agent.as_deref(), referer, None).await?;
+                let m3u8_media_bytes = get_response(
+                    self.client.as_ref(),
+                    media_playlist_url.as_str(),
+                    self.user_agent.as_deref(),
+                    referer,
+                    None,
+                )
+                .await
+                .with_context(|| "failed to get m3u8 media playlist response")?
+                .response()
+                .bytes()
+                .await
+                .with_context(|| "failed to get m3u8 media playlist bytes")?;
 
                 match m3u8_rs::parse_media_playlist_res(&m3u8_media_bytes) {
                     Ok(media_playlist) => (media_playlist_url, media_playlist),
@@ -445,7 +460,120 @@ impl Downloader {
         let mut downloaded_duration: f64 = 0.0;
         let mut total_bytes_estimation = None;
 
-        for segment in media_playlist.segments {
+        enum EncryptionMethod {
+            Aes128,
+        }
+        struct Encryption {
+            method: EncryptionMethod,
+            key: [u8; 16],
+            iv: Option<[u8; 16]>,
+        }
+        enum Decryptor {
+            None,
+            Aes128 {
+                decryptor: cbc::Decryptor<aes::Aes128>,
+                last_chunk: Option<bytes::Bytes>,
+                rest_to_decrypt: Vec<u8>,
+            },
+        }
+        let mut current_encryption = None;
+
+        for (segement_index, segment) in
+            std::iter::successors(Some(u128::from(media_playlist.media_sequence)), |&prev| Some(prev + 1))
+                .zip(media_playlist.segments)
+        {
+            if let Some(encryption_key) = segment.key {
+                let encryption_method = match encryption_key.method {
+                    KeyMethod::None => None,
+                    KeyMethod::AES128 => Some(EncryptionMethod::Aes128),
+                    KeyMethod::SampleAES => {
+                        self.error_cleanup_progress_bar(&progress_bar, sub_progresses_index);
+                        anyhow::bail!("m3u8 SAMPLE-AES decryption not implemented");
+                    }
+                    KeyMethod::Other(other) => {
+                        self.error_cleanup_progress_bar(&progress_bar, sub_progresses_index);
+                        anyhow::bail!("m3u8 \"{other}\" decryption not implemented");
+                    }
+                };
+
+                if let Some(encryption_method) = encryption_method {
+                    // Get IV, if there is one
+                    let encryption_iv = match encryption_key.iv {
+                        Some(encryption_iv) => {
+                            let encryption_iv = match encryption_iv
+                                .strip_prefix("0x")
+                                .or_else(|| encryption_iv.strip_prefix("0X"))
+                            {
+                                Some(encryption_iv) => encryption_iv,
+                                None => {
+                                    self.error_cleanup_progress_bar(&progress_bar, sub_progresses_index);
+                                    anyhow::bail!("decryption iv not in hexadecimal format: {}", encryption_iv);
+                                }
+                            };
+                            let encryption_iv = match u128::from_str_radix(encryption_iv, 16) {
+                                Ok(encryption_iv) => encryption_iv,
+                                Err(err) => {
+                                    self.error_cleanup_progress_bar(&progress_bar, sub_progresses_index);
+                                    return Err(err).with_context(|| "failed to parse decryption iv to integer");
+                                }
+                            }
+                            .to_be_bytes();
+                            Some(encryption_iv)
+                        }
+                        None => None,
+                    };
+
+                    // Get key
+                    let relative_key_url = match encryption_key.uri {
+                        Some(relative_key_url) => relative_key_url,
+                        None => {
+                            self.error_cleanup_progress_bar(&progress_bar, sub_progresses_index);
+                            anyhow::bail!("no uri for decryption key provided");
+                        }
+                    };
+                    let key_url = match media_playlist_url.join(&relative_key_url) {
+                        Ok(key_url) => key_url,
+                        Err(err) => {
+                            self.error_cleanup_progress_bar(&progress_bar, sub_progresses_index);
+                            return Err(err).with_context(|| "failed to create m3u8 decryption key url");
+                        }
+                    };
+                    let key_response =
+                        get_response(self.client.as_ref(), key_url, self.user_agent.as_deref(), referer, None).await;
+                    let key_response = match key_response {
+                        Ok(key_response) => key_response,
+                        Err(err) => {
+                            self.error_cleanup_progress_bar(&progress_bar, sub_progresses_index);
+                            return Err(err).with_context(|| "failed to get response of decryption key");
+                        }
+                    };
+                    let key = match key_response.response().bytes().await {
+                        Ok(key) => key,
+                        Err(err) => {
+                            self.error_cleanup_progress_bar(&progress_bar, sub_progresses_index);
+                            return Err(err).with_context(|| "failed to get bytes of decryption key");
+                        }
+                    };
+                    let key_array: [u8; 16] = match Vec::<u8>::from(key).try_into() {
+                        Ok(key_array) => key_array,
+                        Err(_) => {
+                            self.error_cleanup_progress_bar(&progress_bar, sub_progresses_index);
+                            anyhow::bail!("failed to convert key to array");
+                        }
+                    };
+
+                    // Update encryption
+                    current_encryption = Some(Encryption {
+                        method: encryption_method,
+                        key: key_array,
+                        iv: encryption_iv,
+                    });
+                } else {
+                    // Update encryption
+                    current_encryption = None;
+                }
+            }
+
             let segment_url = match media_playlist_url.join(&segment.uri) {
                 Ok(segment_url) => segment_url,
                 Err(err) => {
@@ -469,9 +597,111 @@ impl Downloader {
                 }
             };
             let mut input_stream = response.bytes_stream_resumable();
+            let mut decryptor = if let Some(encryption) = &current_encryption {
+                match encryption.method {
+                    EncryptionMethod::Aes128 => Decryptor::Aes128 {
+                        decryptor: cbc::Decryptor::<aes::Aes128>::new(
+                            encryption.key.as_ref().into(),
+                            encryption
+                                .iv
+                                .unwrap_or_else(|| segement_index.to_be_bytes())
+                                .as_ref()
+                                .into(),
+                        ),
+                        last_chunk: None,
+                        rest_to_decrypt: Vec::new(),
+                    },
+                }
+            } else {
+                Decryptor::None
+            };
+
+            enum ProcessChunk {
+                NewChunk(bytes::Bytes),
+                FlushLastChunkIfExists,
+            }
+
+            async fn process_chunk(
+                downloader: &Downloader,
+                decryptor: &mut Decryptor,
+                output_stream: &mut tokio::io::BufWriter<tokio::fs::File>,
+                progress_bar: &indicatif::ProgressBar,
+                chunk: ProcessChunk,
+                downloaded_bytes: &mut u64,
+                total_bytes_estimation: &Option<u64>,
+                sub_progresses_index: usize,
+            ) -> Result<(), anyhow::Error> {
+                let chunk_to_write = match decryptor {
+                    Decryptor::None => match chunk {
+                        ProcessChunk::NewChunk(bytes) => Some(bytes),
+                        ProcessChunk::FlushLastChunkIfExists => None,
+                    },
+                    Decryptor::Aes128 {
+                        decryptor,
+                        last_chunk,
+                        rest_to_decrypt,
+                    } => {
+                        let is_last_chunk = match &chunk {
+                            ProcessChunk::NewChunk(_) => false,
+                            ProcessChunk::FlushLastChunkIfExists => true,
+                        };
+                        let current_chunk = match chunk {
+                            ProcessChunk::NewChunk(bytes) => std::mem::replace(last_chunk, Some(bytes)),
+                            ProcessChunk::FlushLastChunkIfExists => std::mem::take(last_chunk),
+                        };
+
+                        if let Some(current_chunk) = current_chunk {
+                            let mut total_to_decrypt: Vec<u8> =
+                                Vec::with_capacity(rest_to_decrypt.len() + current_chunk.len());
+                            total_to_decrypt.extend_from_slice(rest_to_decrypt);
+                            total_to_decrypt.extend_from_slice(&current_chunk);
+
+                            let decryptable_len = total_to_decrypt.len() & !0b1111; // previous multiple of 16
+                            let rest_data = total_to_decrypt.split_off(decryptable_len);
+                            let _ = std::mem::replace(rest_to_decrypt, rest_data);
+
+                            let data: InOutBuf<u8> = total_to_decrypt.as_mut_slice().into();
+                            let (mut blocks, tail) = data.into_chunks();
+                            if !tail.is_empty() {
+                                downloader.error_cleanup_progress_bar(progress_bar, sub_progresses_index);
+                                anyhow::bail!("decryption blocks have tail");
+                            }
+                            decryptor.decrypt_blocks_inout_mut(blocks.reborrow());
+                            if is_last_chunk {
+                                match aes::cipher::block_padding::Pkcs7::unpad_blocks(blocks.into_out()) {
+                                    Ok(truncated_result) => {
+                                        let truncated_len = truncated_result.len();
+                                        total_to_decrypt.truncate(truncated_len);
+                                    }
+                                    Err(UnpadError) => {
+                                        downloader.error_cleanup_progress_bar(progress_bar, sub_progresses_index);
+                                        anyhow::bail!("failed to unpad data");
+                                    }
+                                }
+                            }
+                            Some(bytes::Bytes::from(total_to_decrypt))
+                        } else {
+                            None
+                        }
+                    }
+                };
+
+                if let Some(mut chunk) = chunk_to_write {
+                    *downloaded_bytes += chunk.len() as u64;
+
+                    if let Err(err) = output_stream.write_all_buf(&mut chunk).await {
+                        downloader.error_cleanup_progress_bar(progress_bar, sub_progresses_index);
+                        return Err(err).with_context(|| "failed writing to download file");
+                    }
+
+                    downloader.update_progress(progress_bar, *downloaded_bytes, *total_bytes_estimation);
+                }
+
+                Ok(())
+            }
 
             while let Some(item) = input_stream.next().await {
-                let mut chunk = match item {
+                let chunk = match item {
                     Ok(chunk) => chunk,
                     Err(err) => {
                         self.error_cleanup_progress_bar(&progress_bar, sub_progresses_index);
@@ -479,15 +709,30 @@ impl Downloader {
                     }
                 };
 
-                downloaded_bytes += chunk.len() as u64;
-
-                if let Err(err) = output_stream.write_all_buf(&mut chunk).await {
-                    self.error_cleanup_progress_bar(&progress_bar, sub_progresses_index);
-                    return Err(err).with_context(|| "failed writing to download file");
-                }
-
-                self.update_progress(&progress_bar, downloaded_bytes, total_bytes_estimation);
+                process_chunk(
+                    self,
+                    &mut decryptor,
+                    &mut output_stream,
+                    &progress_bar,
+                    ProcessChunk::NewChunk(chunk),
+                    &mut downloaded_bytes,
+                    &total_bytes_estimation,
+                    sub_progresses_index,
+                )
+                .await?;
             }
+
+            process_chunk(
+                self,
+                &mut decryptor,
+                &mut output_stream,
+                &progress_bar,
+                ProcessChunk::FlushLastChunkIfExists,
+                &mut downloaded_bytes,
+                &total_bytes_estimation,
+                sub_progresses_index,
+            )
+            .await?;
 
             downloaded_duration += segment.duration as f64;
             total_bytes_estimation =
@@ -843,6 +1088,8 @@ pub(crate) async fn get_response<U: IntoUrl>(
         if let Some(user_agent) = user_agent {
             request = request.header(reqwest::header::USER_AGENT, user_agent);
         }
+
+        request = request.header(reqwest::header::ACCEPT_LANGUAGE, "en-US,en;q=0.5");
 
         if let Some(referer) = referer {
             request = request.header(reqwest::header::REFERER, referer);
