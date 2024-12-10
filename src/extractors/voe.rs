@@ -33,7 +33,10 @@ impl Extractor for Voe {
         };
         let mut source = from.get_source(None).await?;
 
-        if let Some(redirect_url) = REDIRECT_REGEX.captures(&source).and_then(|captures| captures.get(1)) {
+        if let Some(redirect_url) = REDIRECT_REGEX
+            .captures(&source)
+            .and_then(|captures| captures.get(1).or_else(|| captures.get(2)))
+        {
             source = ExtractFrom::Url {
                 url: redirect_url.as_str().to_string(),
                 user_agent,
