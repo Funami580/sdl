@@ -99,7 +99,7 @@ impl Extractor for Speedfiles {
                 referer: None,
             })
             .next()
-            .with_context(|| "Speedfiles: failed to retrieve sources")
+            .context("Speedfiles: failed to retrieve sources")
     }
 }
 

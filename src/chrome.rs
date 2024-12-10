@@ -34,7 +34,7 @@ impl<'a> ChromeDriver<'a> {
         // Launch ChromeDriver
         let (chromedriver_path, browser_path) = Self::get_chromedriver_and_browser_path()
             .await
-            .with_context(|| "failed to find or fetch ChromeDriver")?;
+            .context("failed to find or fetch ChromeDriver")?;
 
         let Some(port) = portpicker::pick_unused_port() else {
             anyhow::bail!("no free port found for ChromeDriver");
@@ -54,7 +54,7 @@ impl<'a> ChromeDriver<'a> {
         let child_process = chromedriver_cmd
             .arg(format!("--port={}", port))
             .spawn()
-            .with_context(|| "failed to start ChromeDriver")?;
+            .context("failed to start ChromeDriver")?;
 
         // ChromeDriver Capabilities
         let mut caps = thirtyfour::DesiredCapabilities::chrome();
@@ -111,7 +111,7 @@ impl<'a> ChromeDriver<'a> {
                         tries += 1;
 
                         if tries == 100 {
-                            return Err(err).with_context(|| "could not connect to ChromeDriver");
+                            return Err(err).context("could not connect to ChromeDriver");
                         }
 
                         tokio::time::sleep(Duration::from_millis(50)).await;
@@ -186,11 +186,11 @@ impl<'a> ChromeDriver<'a> {
 
                 match setup_result {
                     Ok(Ok((driver_path, browser_path))) => Ok((driver_path, browser_path)),
-                    Ok(Err(err)) => Err(err).with_context(|| "failed to set up ChromeDriver"),
-                    Err(err) => Err(err).with_context(|| "failed to set up ChromeDriver"),
+                    Ok(Err(err)) => Err(err).context("failed to set up ChromeDriver"),
+                    Err(err) => Err(err).context("failed to set up ChromeDriver"),
                 }
             }
-            Err(err) => Err(err).with_context(|| "failed to create Chrome Manager"),
+            Err(err) => Err(err).context("failed to create Chrome Manager"),
         }
     }
 
@@ -239,7 +239,7 @@ impl<'a> ChromeDriver<'a> {
         let ublock_download_file_path = self.data_dir.join("uBlock.zip");
 
         if let Err(err) = remove_file_ignore_not_exists(&ublock_download_file_path).await {
-            return Err(err).with_context(|| "failed to remove old uBlock Origin asset file");
+            return Err(err).context("failed to remove old uBlock Origin asset file");
         }
 
         let Some(serde_json::Value::Array(assets)) = json_object.get("assets") else {
@@ -276,23 +276,23 @@ impl<'a> ChromeDriver<'a> {
         }
 
         if let Err(err) = remove_dir_all_ignore_not_exists(ublock_dir).await {
-            return Err(err).with_context(|| "failed to remove old uBlock Origin extension directory");
+            return Err(err).context("failed to remove old uBlock Origin extension directory");
         }
 
         tokio::fs::create_dir_all(ublock_dir)
             .await
-            .with_context(|| "failed to create uBlock Origin extension directory")?;
+            .context("failed to create uBlock Origin extension directory")?;
 
         if let Err(err) = zip_extensions::zip_extract(&ublock_download_file_path, ublock_dir) {
             let _ = tokio::fs::remove_file(&current_version_file).await;
             let _ = tokio::fs::remove_dir_all(ublock_dir).await;
-            return Err(err).with_context(|| "failed to extract uBlock Origin asset file");
+            return Err(err).context("failed to extract uBlock Origin asset file");
         }
 
         let _ = tokio::fs::remove_file(&ublock_download_file_path).await;
         tokio::fs::write(&current_version_file, &latest_version)
             .await
-            .with_context(|| "failed to update uBlock Origin version file")?;
+            .context("failed to update uBlock Origin version file")?;
 
         Ok(())
     }
@@ -300,14 +300,14 @@ impl<'a> ChromeDriver<'a> {
     async fn get_ublock_directory(ublock_dir: &Path) -> Result<PathBuf, anyhow::Error> {
         let mut ublock_dir_files = tokio::fs::read_dir(&ublock_dir)
             .await
-            .with_context(|| "failed to list files in uBlock Origin extension directory")?;
+            .context("failed to list files in uBlock Origin extension directory")?;
         let mut directory = None;
         let mut encountered_file = false;
 
         while let Some(file) = ublock_dir_files
             .next_entry()
             .await
-            .with_context(|| "failed to get file in uBlock Origin extension directory")?
+            .context("failed to get file in uBlock Origin extension directory")?
         {
             if encountered_file {
                 return Ok(ublock_dir.to_path_buf());
@@ -316,7 +316,7 @@ impl<'a> ChromeDriver<'a> {
             let is_directory = file
                 .file_type()
                 .await
-                .with_context(|| "failed to get file type of file in uBlock Origin extension directory")?
+                .context("failed to get file type of file in uBlock Origin extension directory")?
                 .is_dir();
 
             if is_directory {

@@ -66,7 +66,7 @@ impl Voe {
 
                 ExtractedVideo { url, referer: None }
             })
-            .with_context(|| "Voe: failed to retrieve sources")
+            .context("Voe: failed to retrieve sources")
     }
 
     fn extract2(source: &str) -> Result<ExtractedVideo, anyhow::Error> {
@@ -99,7 +99,7 @@ impl Voe {
                 url: video_url,
                 referer: None,
             })
-            .with_context(|| "Voe: failed to retrieve sources")
+            .context("Voe: failed to retrieve sources")
     }
 }
 

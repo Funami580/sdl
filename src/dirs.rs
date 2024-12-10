@@ -20,5 +20,5 @@ pub(crate) async fn get_data_dir() -> Result<PathBuf, anyhow::Error> {
 pub(crate) fn get_save_directory(custom_save_directory: Option<PathBuf>) -> Result<PathBuf, anyhow::Error> {
     custom_save_directory
         .ok_or(())
-        .or_else(|_| std::env::current_dir().with_context(|| "failed to get current working directory"))
+        .or_else(|_| std::env::current_dir().context("failed to get current working directory"))
 }

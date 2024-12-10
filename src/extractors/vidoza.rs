@@ -34,7 +34,7 @@ impl Extractor for Vidoza {
                 url: video_url.as_str().to_string(),
                 referer: None,
             })
-            .with_context(|| "Vidoza: failed to retrieve sources")
+            .context("Vidoza: failed to retrieve sources")
     }
 }
 

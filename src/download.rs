@@ -246,7 +246,7 @@ impl Downloader {
     }
 
     pub(crate) async fn download_to_file(&self, task: InternalDownloadTask) -> Result<(), anyhow::Error> {
-        let url = Url::parse(&task.url).with_context(|| "failed to parse URL")?;
+        let url = Url::parse(&task.url).context("failed to parse URL")?;
         let response = get_response(
             self.client.as_ref(),
             url.clone(),
@@ -284,7 +284,7 @@ impl Downloader {
 
             final_path
                 .file_name()
-                .with_context(|| "failed to get file name")?
+                .context("failed to get file name")?
                 .to_string_lossy()
                 .to_string()
         };
@@ -303,7 +303,7 @@ impl Downloader {
                 .open(&output_path)
                 .await
         }
-        .with_context(|| "failed to open download target file")?;
+        .context("failed to open download target file")?;
 
         if is_m3u8 {
             self.m3u8_download(
@@ -343,7 +343,7 @@ impl Downloader {
                 Ok(chunk) => chunk,
                 Err(err) => {
                     self.error_cleanup_progress_bar(&progress_bar, sub_progresses_index);
-                    return Err(err).with_context(|| "failed download");
+                    return Err(err).context("failed download");
                 }
             };
 
@@ -351,7 +351,7 @@ impl Downloader {
 
             if let Err(err) = output_stream.write_all_buf(&mut chunk).await {
                 self.error_cleanup_progress_bar(&progress_bar, sub_progresses_index);
-                return Err(err).with_context(|| "failed writing to download file");
+                return Err(err).context("failed writing to download file");
             }
 
             self.update_progress(&progress_bar, downloaded, content_length);
@@ -423,7 +423,7 @@ impl Downloader {
 
                 let media_playlist_url = m3u8_url
                     .join(&highest_quality_variant.uri)
-                    .with_context(|| "failed to create m3u8 media playlist url")?;
+                    .context("failed to create m3u8 media playlist url")?;
                 let m3u8_media_bytes = get_response(
                     self.client.as_ref(),
                     media_playlist_url.as_str(),
@@ -432,11 +432,11 @@ impl Downloader {
                     None,
                 )
                 .await
-                .with_context(|| "failed to get m3u8 media playlist response")?
+                .context("failed to get m3u8 media playlist response")?
                 .response()
                 .bytes()
                 .await
-                .with_context(|| "failed to get m3u8 media playlist bytes")?;
+                .context("failed to get m3u8 media playlist bytes")?;
 
                 match m3u8_rs::parse_media_playlist_res(&m3u8_media_bytes) {
                     Ok(media_playlist) => (media_playlist_url, media_playlist),
@@ -518,7 +518,7 @@ impl Downloader {
                                 Ok(encryption_iv) => encryption_iv,
                                 Err(err) => {
                                     self.error_cleanup_progress_bar(&progress_bar, sub_progresses_index);
-                                    return Err(err).with_context(|| "failed to parse decryption iv to integer");
+                                    return Err(err).context("failed to parse decryption iv to integer");
                                 }
                             }
                             .to_be_bytes();
@@ -539,7 +539,7 @@ impl Downloader {
                         Ok(key_url) => key_url,
                         Err(err) => {
                             self.error_cleanup_progress_bar(&progress_bar, sub_progresses_index);
-                            return Err(err).with_context(|| "failed to create m3u8 decryption key url");
+                            return Err(err).context("failed to create m3u8 decryption key url");
                         }
                     };
                     let key_response =
@@ -548,14 +548,14 @@ impl Downloader {
                         Ok(key_response) => key_response,
                         Err(err) => {
                             self.error_cleanup_progress_bar(&progress_bar, sub_progresses_index);
-                            return Err(err).with_context(|| "failed to get response of decryption key");
+                            return Err(err).context("failed to get response of decryption key");
                         }
                     };
                     let key = match key_response.response().bytes().await {
                         Ok(key) => key,
                         Err(err) => {
                             self.error_cleanup_progress_bar(&progress_bar, sub_progresses_index);
-                            return Err(err).with_context(|| "failed to get bytes of decryption key");
+                            return Err(err).context("failed to get bytes of decryption key");
                         }
                     };
                     let key_array: [u8; 16] = match Vec::<u8>::from(key).try_into() {
@@ -582,7 +582,7 @@ impl Downloader {
                 Ok(segment_url) => segment_url,
                 Err(err) => {
                     self.error_cleanup_progress_bar(&progress_bar, sub_progresses_index);
-                    return Err(err).with_context(|| "failed to create m3u8 segment url");
+                    return Err(err).context("failed to create m3u8 segment url");
                 }
             };
             let response = match get_response(
@@ -597,7 +597,7 @@ impl Downloader {
                 Ok(response) => response,
                 Err(err) => {
                     self.error_cleanup_progress_bar(&progress_bar, sub_progresses_index);
-                    return Err(err).with_context(|| "failed to get segment response");
+                    return Err(err).context("failed to get segment response");
                 }
             };
             let mut input_stream = response.bytes_stream_resumable();
@@ -695,7 +695,7 @@ impl Downloader {
 
                     if let Err(err) = output_stream.write_all_buf(&mut chunk).await {
                         downloader.error_cleanup_progress_bar(progress_bar, sub_progresses_index);
-                        return Err(err).with_context(|| "failed writing to download file");
+                        return Err(err).context("failed writing to download file");
                     }
 
                     downloader.update_progress(progress_bar, *downloaded_bytes, *total_bytes_estimation);
@@ -709,7 +709,7 @@ impl Downloader {
                     Ok(chunk) => chunk,
                     Err(err) => {
                         self.error_cleanup_progress_bar(&progress_bar, sub_progresses_index);
-                        return Err(err).with_context(|| "failed download");
+                        return Err(err).context("failed download");
                     }
                 };
 
@@ -807,11 +807,11 @@ impl Downloader {
 
     async fn clean_up_write(mut output_stream: tokio::io::BufWriter<tokio::fs::File>) -> Result<(), anyhow::Error> {
         if let Err(err) = output_stream.flush().await {
-            return Err(err).with_context(|| "failed flushing to download file");
+            return Err(err).context("failed flushing to download file");
         }
 
         if let Err(err) = output_stream.get_mut().sync_all().await {
-            return Err(err).with_context(|| "failed syncing download file to disk");
+            return Err(err).context("failed syncing download file to disk");
         }
 
         Ok(())
@@ -1109,9 +1109,9 @@ pub(crate) async fn get_response<U: IntoUrl>(
         }
 
         let response = client
-            .execute_resumable(request.build().with_context(|| "failed to build request")?)
+            .execute_resumable(request.build().context("failed to build request")?)
             .await
-            .with_context(|| "failed to request url")?;
+            .context("failed to request url")?;
 
         let is_redirect_code = [301, 308, 302, 303, 307].contains(&response.status().as_u16());
         let location_header = response.headers().get(reqwest::header::LOCATION);
@@ -1125,7 +1125,7 @@ pub(crate) async fn get_response<U: IntoUrl>(
                 redirect_count += 1;
                 last_url = redirect_url
                     .to_str()
-                    .with_context(|| "redirect url could not be converted to string")?
+                    .context("redirect url could not be converted to string")?
                     .to_string();
             }
             _ => return Ok(response),
@@ -1134,10 +1134,7 @@ pub(crate) async fn get_response<U: IntoUrl>(
 }
 
 pub(crate) async fn get_response_bytes(response: reqwest::Response) -> Result<bytes::Bytes, anyhow::Error> {
-    response
-        .bytes()
-        .await
-        .with_context(|| "failed to get bytes of response body")
+    response.bytes().await.context("failed to get bytes of response body")
 }
 
 pub(crate) async fn get_page_bytes<U: IntoUrl>(
@@ -1165,7 +1162,7 @@ pub(crate) async fn get_page_text<U: IntoUrl>(
         .response()
         .text()
         .await
-        .with_context(|| "failed to parse response body as text")
+        .context("failed to parse response body as text")
 }
 
 pub(crate) async fn get_page_json<U: IntoUrl>(
@@ -1179,7 +1176,7 @@ pub(crate) async fn get_page_json<U: IntoUrl>(
         .response()
         .json()
         .await
-        .with_context(|| "failed to parse response body as json")
+        .context("failed to parse response body as json")
 }
 
 mod retry {

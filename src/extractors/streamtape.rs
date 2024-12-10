@@ -52,7 +52,7 @@ impl Extractor for Streamtape {
 
                 Some(extracted_video)
             })
-            .with_context(|| "Streamtape: failed to retrieve sources")
+            .context("Streamtape: failed to retrieve sources")
     }
 }
 

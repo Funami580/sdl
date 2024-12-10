@@ -128,7 +128,7 @@ impl Ffmpeg {
             .read(true)
             .open(&gzip_path)
             .await
-            .with_context(|| "failed to open compressed FFmpeg file")?;
+            .context("failed to open compressed FFmpeg file")?;
 
         let buf_reader = tokio::io::BufReader::new(gzip_file);
         let mut decoder = async_compression::tokio::bufread::GzipDecoder::new(buf_reader);
@@ -146,11 +146,11 @@ impl Ffmpeg {
         let mut output_file = open_options
             .open(&ffmepg_path)
             .await
-            .with_context(|| "failed to open or create FFmpeg file")?;
+            .context("failed to open or create FFmpeg file")?;
 
         if let Err(err) = tokio::io::copy(&mut decoder, &mut output_file).await {
             let _ = tokio::fs::remove_file(&ffmepg_path).await;
-            return Err(err).with_context(|| "failed to decompress the compressed FFmpeg file");
+            return Err(err).context("failed to decompress the compressed FFmpeg file");
         }
 
         let _ = tokio::fs::remove_file(&gzip_path).await;

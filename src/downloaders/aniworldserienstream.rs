@@ -48,10 +48,10 @@ impl InstantiatedDownloader for AniWorldSerienStream<'_> {
                 vec![],
             )
             .await
-            .with_context(|| "failed to get title")?
+            .context("failed to get title")?
             .json()
             .as_str()
-            .with_context(|| "failed to get title as string")?
+            .context("failed to get title as string")?
             .trim()
             .to_owned();
 
@@ -107,7 +107,7 @@ impl TryFrom<&str> for ParsedUrl {
     type Error = anyhow::Error;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
-        let captures = URL_REGEX.captures(value).with_context(|| "failed to find captures")?;
+        let captures = URL_REGEX.captures(value).context("failed to find captures")?;
         let groups = captures
             .iter()
             .skip(1)
@@ -130,17 +130,11 @@ impl TryFrom<&str> for ParsedUrl {
             let season = if season.eq_ignore_ascii_case("filme") {
                 0
             } else {
-                season
-                    .parse::<u32>()
-                    .with_context(|| "failed to parse season as number")?
+                season.parse::<u32>().context("failed to parse season as number")?
             };
 
             let episode = if let Some(episode) = groups.get(3) {
-                Some(
-                    episode
-                        .parse::<u32>()
-                        .with_context(|| "failed to parse episode as number")?,
-                )
+                Some(episode.parse::<u32>().context("failed to parse episode as number")?)
             } else {
                 None
             };
@@ -253,14 +247,11 @@ impl<'driver, 'url, F: FnMut() -> Duration> Scraper<'driver, 'url, F> {
         self.driver
             .goto(first_episode_url)
             .await
-            .with_context(|| "failed to go to episode page")?;
+            .context("failed to go to episode page")?;
         sleep_random(1000..=2000).await; // wait until page has loaded
         self.settings.maybe_ddos_wait().await;
 
-        let seasons_info = self
-            .get_seasons_info()
-            .await
-            .with_context(|| "failed to get seasons info")?;
+        let seasons_info = self.get_seasons_info().await.context("failed to get seasons info")?;
         let season_start = if seasons_info.has_season_zero { 0 } else { 1 };
         let mut got_error = false;
 
@@ -294,7 +285,7 @@ impl<'driver, 'url, F: FnMut() -> Duration> Scraper<'driver, 'url, F> {
             self.driver
                 .goto(first_episode_url)
                 .await
-                .with_context(|| "failed to go to episode page")?;
+                .context("failed to go to episode page")?;
             sleep_random(1000..=2000).await; // wait until page has loaded
             self.settings.maybe_ddos_wait().await;
         }
@@ -302,9 +293,9 @@ impl<'driver, 'url, F: FnMut() -> Duration> Scraper<'driver, 'url, F> {
         let max_episodes = self
             .get_episode_info(season, 1)
             .await
-            .with_context(|| "failed to get episode info")?
+            .context("failed to get episode info")?
             .max_episode_number_in_season
-            .with_context(|| "failed to get maximum episode number in season")?;
+            .context("failed to get maximum episode number in season")?;
 
         let mut goto = false;
         let mut got_error = false;
@@ -332,7 +323,7 @@ impl<'driver, 'url, F: FnMut() -> Duration> Scraper<'driver, 'url, F> {
             self.driver
                 .goto(self.parsed_url.get_episode_url(season, episode))
                 .await
-                .with_context(|| "failed to go to episode page")?;
+                .context("failed to go to episode page")?;
             sleep_random(1000..=2000).await; // wait until page has loaded
             self.settings.maybe_ddos_wait().await;
         }
@@ -485,17 +476,17 @@ impl<'driver, 'url, F: FnMut() -> Duration> Scraper<'driver, 'url, F> {
         let episode_info = self
             .get_episode_info(current_season, current_episode)
             .await
-            .with_context(|| "failed to get episode info")?;
+            .context("failed to get episode info")?;
         let (video_type, lang_element) = self
             .get_language_element()
             .await
-            .with_context(|| "failed to find episode in requested language")?;
+            .context("failed to find episode in requested language")?;
 
         let lang_key = lang_element
             .attr("data-lang-key")
             .await
             .unwrap()
-            .with_context(|| "failed to find data-lang-key")?;
+            .context("failed to find data-lang-key")?;
         let streams_selector = By::Css(&format!(r#".hosterSiteVideo ul li[data-lang-key="{}"]"#, lang_key));
         let available_streams = self.driver.query(streams_selector).all_from_selector().await.unwrap();
 
@@ -523,10 +514,9 @@ impl<'driver, 'url, F: FnMut() -> Duration> Scraper<'driver, 'url, F> {
                     vec![],
                 )
                 .await
-                .with_context(|| "failed to get name of stream platform")?
+                .context("failed to get name of stream platform")?
                 .json()
-                .as_str()
-                .with_context(|| "failed to get name of stream platform as string")?
+                .as_str().context("failed to get name of stream platform as string")?
                 .trim()
                 .to_owned();
 

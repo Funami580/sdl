@@ -29,7 +29,7 @@ pub(crate) fn start_mpv(url: &str, debug: bool) -> Result<(), anyhow::Error> {
         .arg("--}")
         .spawn()
         .map(|_| ())
-        .with_context(|| "failed to start mpv")
+        .context("failed to start mpv")
 }
 
 pub(crate) async fn start_mpv_with_ipc(
@@ -83,7 +83,7 @@ pub(crate) async fn start_mpv_with_ipc(
         .arg(first_url)
         .arg("--}")
         .spawn()
-        .with_context(|| "failed to start mpv")?;
+        .context("failed to start mpv")?;
 
     let ipc_path_rs = if cfg!(unix) {
         ipc_path_mpv.to_owned()
@@ -116,7 +116,7 @@ async fn run_mpv_ipc(
                     tries += 1;
 
                     if tries == 200 {
-                        return Err(err).with_context(|| "failed to connect to ipc socket");
+                        return Err(err).context("failed to connect to ipc socket");
                     }
 
                     tokio::time::sleep(Duration::from_millis(50)).await;
@@ -148,11 +148,11 @@ async fn run_mpv_ipc(
         ipc_write
             .write_all_buf(&mut message)
             .await
-            .with_context(|| "failed to send url to mpv playlist: failed write")?;
+            .context("failed to send url to mpv playlist: failed write")?;
         ipc_write
             .flush()
             .await
-            .with_context(|| "failed to send url to mpv playlist: failed flush")?;
+            .context("failed to send url to mpv playlist: failed flush")?;
     }
 
     Ok(())
