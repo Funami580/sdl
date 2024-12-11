@@ -9,6 +9,7 @@ Download multiple episodes from streaming sites
 * [S.to](https://s.to)
 
 ## Supported extractors
+* Doodstream
 * Filemoon
 * Speedfiles
 * Streamtape

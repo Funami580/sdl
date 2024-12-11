@@ -1,6 +1,7 @@
 use bitmask_enum::bitmask;
 
 use crate::download;
+use crate::extractors::doodstream::Doodstream;
 use crate::extractors::dummy::Dummy;
 use crate::extractors::filemoon::Filemoon;
 use crate::extractors::speedfiles::Speedfiles;
@@ -9,6 +10,7 @@ use crate::extractors::vidmoly::Vidmoly;
 use crate::extractors::vidoza::Vidoza;
 use crate::extractors::voe::Voe;
 
+pub mod doodstream;
 pub mod dummy;
 pub mod filemoon;
 pub mod speedfiles;
@@ -224,6 +226,7 @@ macro_rules! create_functions_for_extractors {
 
 create_functions_for_extractors! {
     Dummy,
+    Doodstream,
     Filemoon,
     Speedfiles,
     Streamtape,
