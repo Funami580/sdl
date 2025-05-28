@@ -7,7 +7,7 @@ use regex::Regex;
 
 use super::utils::is_url_host_and_has_path;
 use super::{ExtractFrom, ExtractedVideo, Extractor, SupportedFrom};
-use crate::download::get_page_text;
+use crate::download::{self, get_page_text};
 
 pub struct Doodstream;
 
@@ -16,7 +16,7 @@ impl Extractor for Doodstream {
     const NAMES: &'static [&'static str] = &["Doodstream"];
 
     fn supported_from() -> SupportedFrom {
-        SupportedFrom::all()
+        SupportedFrom::Url
     }
 
     async fn supports_url(url: &str) -> Option<bool> {
@@ -34,10 +34,24 @@ impl Extractor for Doodstream {
                 || is_url_host_and_has_path(url, "dood.sh", true, true)
                 || is_url_host_and_has_path(url, "dood.cx", true, true)
                 || is_url_host_and_has_path(url, "dood.wf", true, true)
+                || is_url_host_and_has_path(url, "dood.re", true, true)
+                || is_url_host_and_has_path(url, "dood.one", true, true)
+                || is_url_host_and_has_path(url, "dood.tech", true, true)
+                || is_url_host_and_has_path(url, "dood.work", true, true)
+                || is_url_host_and_has_path(url, "doods.pro", true, true)
                 || is_url_host_and_has_path(url, "dooood.com", true, true)
                 || is_url_host_and_has_path(url, "doodstream.com", true, true)
+                || is_url_host_and_has_path(url, "doodstream.co", true, true)
                 || is_url_host_and_has_path(url, "d000d.com", true, true)
-                || is_url_host_and_has_path(url, "d0000d.com", true, true),
+                || is_url_host_and_has_path(url, "d0000d.com", true, true)
+                || is_url_host_and_has_path(url, "doodapi.com", true, true)
+                || is_url_host_and_has_path(url, "d0o0d.com", true, true)
+                || is_url_host_and_has_path(url, "do0od.com", true, true)
+                || is_url_host_and_has_path(url, "dooodster.com", true, true)
+                || is_url_host_and_has_path(url, "vidply.com", true, true)
+                || is_url_host_and_has_path(url, "do7go.com", true, true)
+                || is_url_host_and_has_path(url, "all3do.com", true, true)
+                || is_url_host_and_has_path(url, "doply.net", true, true),
         )
     }
 
@@ -47,17 +61,36 @@ impl Extractor for Doodstream {
         });
         const RANDOM_STRING_CHARS: &[u8] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789".as_bytes();
 
-        let (current_url, user_agent, fetch_referer) = match &from {
+        // Extract current url info etc.
+        let (current_url, user_agent, current_referer) = match from {
             ExtractFrom::Url {
                 url,
                 user_agent,
-                referer: _,
-            } => (url.to_string(), user_agent.clone(), Some(url.to_string())),
-            ExtractFrom::Source(_) => ("https://dood.li/".to_string(), None, None),
+                referer,
+            } => (url, user_agent, referer),
+            ExtractFrom::Source(_) => anyhow::bail!("Doodstream: from source is unsupported"),
         };
         let current_url = url::Url::parse(&current_url).context("Doodstream: failed to retrieve sources")?;
 
-        let source = from.get_source(None).await?;
+        // Resolve url and get text response
+        let response = download::get_response(
+            None,
+            current_url,
+            user_agent.as_deref(),
+            current_referer.as_deref(),
+            None,
+        )
+        .await
+        .context("Doodstream: failed to retrieve sources")?
+        .response();
+
+        let resolved_url = response.url().clone();
+        let source = response
+            .text()
+            .await
+            .context("Doodstream: failed to retrieve sources")?;
+
+        // Extract video link
         let (relative_fetch_url, token) = FETCH_REGEX
             .captures(&source)
             .and_then(|captures| captures.get(1).zip(captures.get(2)))
@@ -65,10 +98,11 @@ impl Extractor for Doodstream {
             .context("Doodstream: failed to retrieve sources")?;
 
         let video_base_url = {
-            let fetch_url = current_url
+            let fetch_url = resolved_url
                 .join(&relative_fetch_url)
                 .context("Doodstream: failed to retrieve sources")?;
-            get_page_text(fetch_url, user_agent.as_deref(), fetch_referer.as_deref(), None)
+            let fetch_referer = resolved_url.as_str().to_string();
+            get_page_text(fetch_url, user_agent.as_deref(), Some(&fetch_referer), None)
                 .await
                 .context("Doodstream: failed to retrieve sources")?
         };
@@ -90,7 +124,7 @@ impl Extractor for Doodstream {
         };
 
         let video_url = format!("{video_base_url}{random_string}?token={token}&expiry={unix_time_millis}");
-        let video_url_referer = current_url
+        let video_url_referer = resolved_url
             .join("/")
             .context("Doodstream: failed to retrieve sources")?;
 
