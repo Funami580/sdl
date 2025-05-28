@@ -11,6 +11,7 @@ Download multiple episodes from streaming sites
 ## Supported extractors
 * Doodstream
 * Filemoon
+* LoadX
 * Speedfiles
 * Streamtape
 * Vidmoly

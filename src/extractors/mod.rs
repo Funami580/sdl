@@ -4,6 +4,7 @@ use crate::download;
 use crate::extractors::doodstream::Doodstream;
 use crate::extractors::dummy::Dummy;
 use crate::extractors::filemoon::Filemoon;
+use crate::extractors::loadx::LoadX;
 use crate::extractors::speedfiles::Speedfiles;
 use crate::extractors::streamtape::Streamtape;
 use crate::extractors::vidmoly::Vidmoly;
@@ -13,6 +14,7 @@ use crate::extractors::voe::Voe;
 pub mod doodstream;
 pub mod dummy;
 pub mod filemoon;
+pub mod loadx;
 pub mod speedfiles;
 pub mod streamtape;
 pub mod vidmoly;
@@ -228,6 +230,7 @@ create_functions_for_extractors! {
     Dummy,
     Doodstream,
     Filemoon,
+    LoadX,
     Speedfiles,
     Streamtape,
     Vidmoly,

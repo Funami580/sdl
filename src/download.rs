@@ -31,10 +31,10 @@ use crate::downloaders::{DownloadTask, EpisodeInfo, EpisodeNumber, Language, Ser
 use crate::logger::log_wrapper::SetLogWrapper;
 use crate::utils::remove_file_ignore_not_exists;
 
-const DEFAULT_USER_AGENT: &str =
+pub(crate) const DEFAULT_USER_AGENT: &str =
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Safari/537.36";
 
-static DEFAULT_RETRY_CLIENT_NO_REDIRECT: Lazy<reqwest_partial_retry::Client> = Lazy::new(|| {
+pub(crate) static DEFAULT_RETRY_CLIENT_NO_REDIRECT: Lazy<reqwest_partial_retry::Client> = Lazy::new(|| {
     reqwest::Client::builder()
         .user_agent(DEFAULT_USER_AGENT)
         .connect_timeout(Duration::from_secs(20))
@@ -259,7 +259,20 @@ impl Downloader {
             None,
         )
         .await?;
-        let is_m3u8 = is_m3u8_url(response.url());
+        let content_type = response.headers().get(reqwest::header::CONTENT_TYPE);
+        let is_m3u8 = is_m3u8_url(response.url())
+            || content_type.is_some_and(|content_type| {
+                const M3U8_CONTENT_TYPES: &[&str] = &[
+                    "application/m3u",
+                    "application/vnd.apple.mpegurl",
+                    "application/x-mpegURL",
+                    "text/plain;charset=UTF-8",
+                    "text/plain",
+                ];
+                M3U8_CONTENT_TYPES
+                    .iter()
+                    .any(|possible_type| content_type.as_bytes().eq_ignore_ascii_case(possible_type.as_bytes()))
+            });
 
         let output_path = if !task.output_path_has_extension {
             match (
