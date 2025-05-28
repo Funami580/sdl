@@ -9,12 +9,12 @@ use thirtyfour::{By, WebDriver, WebElement};
 use tokio::sync::mpsc::UnboundedSender;
 
 use super::{
-    AllOrSpecific, DownloadRequest, DownloadSettings, DownloadTask, EpisodeInfo, EpisodeNumber, InstantiatedDownloader,
-    Language, SeriesInfo, VideoType,
+    AllOrSpecific, DownloadRequest, DownloadSettings, DownloadTask, EpisodeInfo, EpisodeNumber, ExtractorMatch,
+    InstantiatedDownloader, Language, SeriesInfo, VideoType,
 };
 use crate::downloaders::utils::sleep_random;
 use crate::downloaders::{Downloader, EpisodesRequest};
-use crate::extractors::extract_video_url_with_extractor_from_url_unchecked;
+use crate::extractors::{extract_video_url_with_extractor_from_url_unchecked, has_extractor_with_name_other_name};
 
 static URL_REGEX: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r#"(?i)^https?://(?:www\.)?(?:(aniworld)\.to/anime|(s)\.to/serie)/stream/([^/\s]+)(?:/(?:(?:staffel-([1-9][0-9]*)(?:/(?:episode-([1-9][0-9]*)/?)?)?)|(?:(filme)(?:/(?:film-([1-9][0-9]*)/?)?)?))?)?$"#)
@@ -494,7 +494,9 @@ impl<'driver, 'url, F: FnMut() -> Duration> Scraper<'driver, 'url, F> {
             anyhow::bail!("no streams in requested language available");
         }
 
+        // Get all available stream platforms with name and url
         let current_url = self.driver.current_url().await.unwrap();
+        let mut stream_platform_name_and_redirect_link = Vec::with_capacity(available_streams.len());
 
         for stream in available_streams {
             let Some(link_target) = stream.attr("data-link-target").await.unwrap() else {
@@ -520,6 +522,31 @@ impl<'driver, 'url, F: FnMut() -> Duration> Scraper<'driver, 'url, F> {
                 .trim()
                 .to_owned();
 
+            stream_platform_name_and_redirect_link.push((stream_platform_name, redirect_link));
+        }
+
+        // Order the stream platforms
+        let mut ordered_stream_platforms = Vec::with_capacity(stream_platform_name_and_redirect_link.len());
+
+        for extractor in &self.request.extractor_priorities {
+            match extractor {
+                ExtractorMatch::Name(extractor_name) => {
+                    let index = stream_platform_name_and_redirect_link
+                        .iter()
+                        .position(|x| has_extractor_with_name_other_name(extractor_name, &x.0));
+                    if let Some(index) = index {
+                        ordered_stream_platforms.push(stream_platform_name_and_redirect_link.remove(index));
+                    }
+                }
+                ExtractorMatch::Any => {
+                    ordered_stream_platforms.extend(stream_platform_name_and_redirect_link.into_iter());
+                    break;
+                }
+            }
+        }
+
+        // Try to initiate download for each stream platform
+        for (stream_platform_name, redirect_link) in ordered_stream_platforms {
             log::trace!("Trying to use '{stream_platform_name}' stream server...");
 
             let extracted_video = extract_video_url_with_extractor_from_url_unchecked(

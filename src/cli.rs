@@ -6,7 +6,8 @@ use std::time::Duration;
 
 use clap::{Parser, ValueEnum};
 
-use crate::downloaders::{AllOrSpecific, DownloadSettings, EpisodesRequest, Language, VideoType};
+use crate::downloaders::{AllOrSpecific, DownloadSettings, EpisodesRequest, ExtractorMatch, Language, VideoType};
+use crate::extractors::exists_extractor_with_name;
 
 #[derive(Parser, Debug)]
 #[command(version)]
@@ -32,8 +33,12 @@ pub(crate) struct Args {
     #[arg(short, long, value_parser = parse_ranges, default_value_t = SimpleRanges::Unspecified, hide_default_value = true, conflicts_with_all = ["episodes"], value_name = "RANGES")]
     pub(crate) seasons: SimpleRanges,
 
+    /// Extractor priorities
+    #[arg(short = 'p', long, value_parser = parse_extractor_priorities, value_name = "PRIORITIES", default_value = "*", hide_default_value = true)]
+    pub(crate) extractor_priorities: Box<[ExtractorMatch]>,
+
     /// Use underlying extractors directly
-    #[arg(short = 'u', long, num_args = 0..=1, require_equals = true, value_parser = parse_extractor, default_missing_value = "auto", conflicts_with_all = ["video_type", "language", "type_language", "episodes", "seasons", "concurrent_downloads", "ddos_wait_episodes", "ddos_wait_ms"], value_name = "NAME")]
+    #[arg(short = 'u', long, num_args = 0..=1, require_equals = true, value_parser = parse_extractor, default_missing_value = "auto", conflicts_with_all = ["video_type", "language", "type_language", "episodes", "seasons", "extractor_priorities", "concurrent_downloads", "ddos_wait_episodes", "ddos_wait_ms"], value_name = "NAME")]
     pub(crate) extractor: Option<Extractor>,
 
     /// Concurrent downloads
@@ -273,6 +278,29 @@ fn parse_extractor(input: &str) -> Result<Extractor, String> {
     } else {
         Ok(Extractor::Name(input.to_owned()))
     }
+}
+
+fn parse_extractor_priorities(input: &str) -> Result<Box<[ExtractorMatch]>, String> {
+    let no_space = input.replace(' ', "");
+    let mut parts = no_space.split(',').peekable();
+
+    let mut out = Vec::new();
+    while let Some(part) = parts.next() {
+        if part == "*" {
+            if parts.peek().is_some() {
+                return Err(format!("fallback extractor '*' can only be used at last position"));
+            }
+
+            out.push(ExtractorMatch::Any);
+            break;
+        } else if exists_extractor_with_name(part) {
+            out.push(ExtractorMatch::Name(part.to_string()));
+        } else {
+            return Err(format!("no extractor with name: {part}"));
+        }
+    }
+
+    Ok(out.into_boxed_slice())
 }
 
 #[derive(Debug, Clone)]

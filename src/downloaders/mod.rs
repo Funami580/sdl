@@ -233,6 +233,7 @@ impl<'a> TryFrom<&'a str> for Language {
 pub struct DownloadRequest {
     pub language: VideoType,
     pub episodes: EpisodesRequest,
+    pub extractor_priorities: Vec<ExtractorMatch>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -283,6 +284,12 @@ impl<F: FnMut() -> Duration> DownloadSettings<F> {
             }
         }
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum ExtractorMatch {
+    Name(String),
+    Any,
 }
 
 #[derive(Debug, Clone)]

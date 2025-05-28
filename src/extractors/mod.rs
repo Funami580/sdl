@@ -47,6 +47,19 @@ macro_rules! exists_extractor_with_name {
     };
 }
 
+macro_rules! has_extractor_with_name_other_name {
+    ($extractor:expr, $other_name:expr, $ext:ty $(, $tail:ty)* $(,)?) => {
+        if <$ext>::NAMES.iter().any(|name| $extractor.eq_ignore_ascii_case(name)) {
+            <$ext>::NAMES.iter().any(|name| $other_name.eq_ignore_ascii_case(name))
+        } else {
+            has_extractor_with_name_other_name!($extractor, $other_name, $($tail),*)
+        }
+    };
+    ($extractor:expr, $other_name:expr $(,)?) => {
+        false
+    };
+}
+
 macro_rules! exists_extractor_for_url {
     ($url:expr, $extractor:expr, $ext:ty $(, $tail:ty)* $(,)?) => {
         if let Some(extractor_name) = $extractor {
@@ -145,6 +158,10 @@ macro_rules! create_functions_for_extractors {
 
         pub fn exists_extractor_with_name(extractor: &str) -> bool {
             exists_extractor_with_name!(extractor, $($ext),*)
+        }
+
+        pub fn has_extractor_with_name_other_name(extractor: &str, other_name: &str) -> bool {
+            has_extractor_with_name_other_name!(extractor, other_name, $($ext),*)
         }
 
         pub async fn exists_extractor_for_url(url: &str, extractor: Option<&str>) -> bool {

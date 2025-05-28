@@ -156,7 +156,7 @@ async fn do_after_chrome_driver(
     chrome: Option<&mut thirtyfour::WebDriver>,
     mut log_wrapper: SetLogWrapper,
     save_directory: PathBuf,
-    args: Args,
+    mut args: Args,
 ) -> bool {
     let debug = args.debug;
     let extractor = args.extractor.as_ref();
@@ -288,9 +288,11 @@ async fn do_after_chrome_driver(
             }
         };
 
+        let extractor_priorities = std::mem::take(&mut args.extractor_priorities).into_vec();
         let download_request = DownloadRequest {
             language: args.get_video_type(),
             episodes: args.get_episodes_request(),
+            extractor_priorities,
         };
 
         if let Some(episodes_downloader) = episodes_downloader {
