@@ -20,7 +20,25 @@ impl Extractor for Doodstream {
     }
 
     async fn supports_url(url: &str) -> Option<bool> {
-        Some(is_url_host_and_has_path(url, "dood.li", true, true))
+        Some(
+            is_url_host_and_has_path(url, "dood.li", true, true)
+                || is_url_host_and_has_path(url, "dood.la", true, true)
+                || is_url_host_and_has_path(url, "ds2video.com", true, true)
+                || is_url_host_and_has_path(url, "ds2play.com", true, true)
+                || is_url_host_and_has_path(url, "dood.yt", true, true)
+                || is_url_host_and_has_path(url, "dood.ws", true, true)
+                || is_url_host_and_has_path(url, "dood.so", true, true)
+                || is_url_host_and_has_path(url, "dood.to", true, true)
+                || is_url_host_and_has_path(url, "dood.pm", true, true)
+                || is_url_host_and_has_path(url, "dood.watch", true, true)
+                || is_url_host_and_has_path(url, "dood.sh", true, true)
+                || is_url_host_and_has_path(url, "dood.cx", true, true)
+                || is_url_host_and_has_path(url, "dood.wf", true, true)
+                || is_url_host_and_has_path(url, "dooood.com", true, true)
+                || is_url_host_and_has_path(url, "doodstream.com", true, true)
+                || is_url_host_and_has_path(url, "d000d.com", true, true)
+                || is_url_host_and_has_path(url, "d0000d.com", true, true),
+        )
     }
 
     async fn extract_video_url(from: ExtractFrom) -> Result<ExtractedVideo, anyhow::Error> {

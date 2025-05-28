@@ -17,7 +17,12 @@ impl Extractor for Streamtape {
     }
 
     async fn supports_url(url: &str) -> Option<bool> {
-        Some(is_url_host_and_has_path(url, "streamtape.com", true, true))
+        Some(
+            is_url_host_and_has_path(url, "streamtape.com", true, true)
+                || is_url_host_and_has_path(url, "shavetape.cash", true, true)
+                || is_url_host_and_has_path(url, "streamtape.xyz", true, true)
+                || is_url_host_and_has_path(url, "streamtape.net", true, true),
+        )
     }
 
     async fn extract_video_url(from: ExtractFrom) -> Result<ExtractedVideo, anyhow::Error> {
