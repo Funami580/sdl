@@ -40,8 +40,12 @@ pub(crate) struct Args {
     #[arg(short = 'N', long, value_parser = parse_optional_with_inf_as_none::<NonZeroU32>, default_value = "5", value_name = "INF|NUMBER")]
     pub(crate) concurrent_downloads: OptionWrapper<NonZeroU32>,
 
+    /// Maximum download rate in bytes per second, e.g. 50K or 4.2MiB
+    #[arg(short = 'r', long, value_parser = parse_rate_limit_as_f64, value_name = "RATE", default_value = "inf", hide_default_value = true)]
+    pub(crate) limit_rate: f64,
+
     /// Number of download retries
-    #[arg(short = 'r', long, value_parser = parse_optional_with_inf_as_none::<NonZeroU32>, default_value = "5", value_name = "INF|NUMBER")]
+    #[arg(short = 'R', long, value_parser = parse_optional_with_inf_as_none::<NonZeroU32>, default_value = "5", value_name = "INF|NUMBER")]
     pub(crate) retries: OptionWrapper<NonZeroU32>,
 
     /// Amount of requests before waiting
@@ -53,7 +57,7 @@ pub(crate) struct Args {
     pub(crate) ddos_wait_ms: u32,
 
     /// Play in mpv
-    #[arg(long, conflicts_with_all = ["concurrent_downloads", "retries"])]
+    #[arg(long, conflicts_with_all = ["concurrent_downloads", "retries", "limit_rate"])]
     pub(crate) mpv: bool,
 
     /// Enable debug mode
@@ -306,4 +310,19 @@ where
     T::Err: Display,
 {
     parse_optional_with_none(input, "never")
+}
+
+fn parse_rate_limit_as_f64(input: &str) -> Result<f64, String> {
+    if input.eq_ignore_ascii_case("inf") {
+        return Ok(f64::INFINITY);
+    }
+
+    let bits = byte_unit::Bit::parse_str(input).map_err(|err| format!("{err}"))?;
+    let bytes = (bits.as_u64() as f64 / 8.0f64).max(0.0);
+
+    if bytes <= 0.0 {
+        return Err("rate limit must be greater than 0".to_string());
+    }
+
+    Ok(bytes)
 }

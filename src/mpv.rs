@@ -1,4 +1,3 @@
-use std::io::Cursor;
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
@@ -144,9 +143,9 @@ async fn run_mpv_ipc(
         .to_string();
         mpv_cmd.push('\n');
 
-        let mut message = Cursor::new(mpv_cmd);
+        let message = mpv_cmd.into_bytes();
         ipc_write
-            .write_all_buf(&mut message)
+            .write_all(&message)
             .await
             .context("failed to send url to mpv playlist: failed write")?;
         ipc_write

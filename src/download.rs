@@ -11,7 +11,7 @@ use aes::cipher::block_padding::{Padding as _, UnpadError};
 use aes::cipher::inout::InOutBuf;
 use aes::cipher::{BlockDecryptMut as _, KeyIvInit as _};
 use anyhow::Context;
-use futures_util::StreamExt;
+use futures_util::{AsyncReadExt as _, StreamExt as _};
 use m3u8_rs::KeyMethod;
 use once_cell::sync::Lazy;
 use reqwest::header::HeaderName;
@@ -21,9 +21,10 @@ use reqwest_partial_retry::{ClientExt, Config};
 use reqwest_retry::policies::ExponentialBackoffBuilder;
 use reqwest_retry::DefaultRetryableStrategy;
 use retry::strategy::CustomRetryStrategy;
-use tokio::io::AsyncWriteExt;
+use tokio::io::AsyncWriteExt as _;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio_stream::wrappers::UnboundedReceiverStream;
+use tokio_util::compat::TokioAsyncReadCompatExt as _;
 use url::Url;
 
 use crate::downloaders::{DownloadTask, EpisodeInfo, EpisodeNumber, Language, SeriesInfo, VideoType};
@@ -192,6 +193,7 @@ impl ProgressBarOrResult {
 
 pub(crate) struct Downloader {
     client: Option<reqwest_partial_retry::Client>,
+    limiter: async_speed_limit::Limiter,
     multi_progress: indicatif::MultiProgress,
     total_progress: RefCell<Option<indicatif::ProgressBar>>,
     sub_progresses: RefCell<Vec<ProgressBarOrResult>>,
@@ -203,6 +205,7 @@ pub(crate) struct Downloader {
 impl Downloader {
     pub(crate) fn new(
         log_wrapper: &mut SetLogWrapper,
+        limiter: async_speed_limit::Limiter,
         debug: bool,
         ffmpeg_path: Option<PathBuf>,
         user_agent: Option<String>,
@@ -236,6 +239,7 @@ impl Downloader {
 
         Downloader {
             client,
+            limiter,
             multi_progress,
             total_progress: RefCell::new(None),
             sub_progresses: RefCell::new(vec![]),
@@ -334,27 +338,34 @@ impl Downloader {
             self.create_progress_bar_unknown_bytes(message)
         };
 
-        let mut input_stream = response.bytes_stream_resumable();
+        let input_stream = response
+            .bytes_stream_resumable()
+            .map(|item| item.map_err(|err| std::io::Error::new(std::io::ErrorKind::Other, err)));
+        let stream_reader = tokio_util::io::StreamReader::new(input_stream);
+        let mut limited_stream = self.limiter.clone().limit(stream_reader.compat());
         let mut output_stream = tokio::io::BufWriter::new(target_file);
         let mut downloaded = 0;
 
-        while let Some(item) = input_stream.next().await {
-            let mut chunk = match item {
-                Ok(chunk) => chunk,
+        let mut buf = vec![0u8; 65536];
+        loop {
+            match limited_stream.read(&mut buf).await {
+                Ok(0) => break,
+                Ok(size) => {
+                    let chunk = &buf[..size];
+                    downloaded += chunk.len() as u64;
+
+                    if let Err(err) = output_stream.write_all(chunk).await {
+                        self.error_cleanup_progress_bar(&progress_bar, sub_progresses_index);
+                        return Err(err).context("failed writing to download file");
+                    }
+
+                    self.update_progress(&progress_bar, downloaded, content_length);
+                }
                 Err(err) => {
                     self.error_cleanup_progress_bar(&progress_bar, sub_progresses_index);
                     return Err(err).context("failed download");
                 }
-            };
-
-            downloaded += chunk.len() as u64;
-
-            if let Err(err) = output_stream.write_all_buf(&mut chunk).await {
-                self.error_cleanup_progress_bar(&progress_bar, sub_progresses_index);
-                return Err(err).context("failed writing to download file");
             }
-
-            self.update_progress(&progress_bar, downloaded, content_length);
         }
 
         // Replace estimation with total size after download finished
@@ -476,7 +487,7 @@ impl Downloader {
             None,
             Aes128 {
                 decryptor: cbc::Decryptor<aes::Aes128>,
-                last_chunk: Option<bytes::Bytes>,
+                last_chunk: Option<Box<[u8]>>,
                 rest_to_decrypt: Vec<u8>,
             },
         }
@@ -600,7 +611,11 @@ impl Downloader {
                     return Err(err).context("failed to get segment response");
                 }
             };
-            let mut input_stream = response.bytes_stream_resumable();
+            let input_stream = response
+                .bytes_stream_resumable()
+                .map(|item| item.map_err(|err| std::io::Error::new(std::io::ErrorKind::Other, err)));
+            let stream_reader = tokio_util::io::StreamReader::new(input_stream);
+            let mut limited_stream = self.limiter.clone().limit(stream_reader.compat());
             let mut decryptor = if let Some(encryption) = &current_encryption {
                 match encryption.method {
                     EncryptionMethod::Aes128 => Decryptor::Aes128 {
@@ -620,8 +635,8 @@ impl Downloader {
                 Decryptor::None
             };
 
-            enum ProcessChunk {
-                NewChunk(bytes::Bytes),
+            enum ProcessChunk<'a> {
+                NewChunk(&'a [u8]),
                 FlushLastChunkIfExists,
             }
 
@@ -630,14 +645,14 @@ impl Downloader {
                 decryptor: &mut Decryptor,
                 output_stream: &mut tokio::io::BufWriter<tokio::fs::File>,
                 progress_bar: &indicatif::ProgressBar,
-                chunk: ProcessChunk,
+                chunk: ProcessChunk<'_>,
                 downloaded_bytes: &mut u64,
                 total_bytes_estimation: &Option<u64>,
                 sub_progresses_index: usize,
             ) -> Result<(), anyhow::Error> {
                 let chunk_to_write = match decryptor {
                     Decryptor::None => match chunk {
-                        ProcessChunk::NewChunk(bytes) => Some(bytes),
+                        ProcessChunk::NewChunk(bytes) => Some(Cow::Borrowed(bytes)),
                         ProcessChunk::FlushLastChunkIfExists => None,
                     },
                     Decryptor::Aes128 {
@@ -650,7 +665,7 @@ impl Downloader {
                             ProcessChunk::FlushLastChunkIfExists => true,
                         };
                         let current_chunk = match chunk {
-                            ProcessChunk::NewChunk(bytes) => std::mem::replace(last_chunk, Some(bytes)),
+                            ProcessChunk::NewChunk(bytes) => std::mem::replace(last_chunk, Some(Box::from(bytes))),
                             ProcessChunk::FlushLastChunkIfExists => std::mem::take(last_chunk),
                         };
 
@@ -683,17 +698,17 @@ impl Downloader {
                                     }
                                 }
                             }
-                            Some(bytes::Bytes::from(total_to_decrypt))
+                            Some(Cow::Owned(total_to_decrypt))
                         } else {
                             None
                         }
                     }
                 };
 
-                if let Some(mut chunk) = chunk_to_write {
+                if let Some(chunk) = chunk_to_write {
                     *downloaded_bytes += chunk.len() as u64;
 
-                    if let Err(err) = output_stream.write_all_buf(&mut chunk).await {
+                    if let Err(err) = output_stream.write_all(&chunk).await {
                         downloader.error_cleanup_progress_bar(progress_bar, sub_progresses_index);
                         return Err(err).context("failed writing to download file");
                     }
@@ -704,26 +719,29 @@ impl Downloader {
                 Ok(())
             }
 
-            while let Some(item) = input_stream.next().await {
-                let chunk = match item {
-                    Ok(chunk) => chunk,
+            let mut buf = vec![0u8; 65536];
+            loop {
+                match limited_stream.read(&mut buf).await {
+                    Ok(0) => break,
+                    Ok(size) => {
+                        let chunk = &buf[..size];
+                        process_chunk(
+                            self,
+                            &mut decryptor,
+                            &mut output_stream,
+                            &progress_bar,
+                            ProcessChunk::NewChunk(chunk),
+                            &mut downloaded_bytes,
+                            &total_bytes_estimation,
+                            sub_progresses_index,
+                        )
+                        .await?;
+                    }
                     Err(err) => {
                         self.error_cleanup_progress_bar(&progress_bar, sub_progresses_index);
                         return Err(err).context("failed download");
                     }
-                };
-
-                process_chunk(
-                    self,
-                    &mut decryptor,
-                    &mut output_stream,
-                    &progress_bar,
-                    ProcessChunk::NewChunk(chunk),
-                    &mut downloaded_bytes,
-                    &total_bytes_estimation,
-                    sub_progresses_index,
-                )
-                .await?;
+                }
             }
 
             process_chunk(

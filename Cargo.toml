@@ -12,7 +12,7 @@ categories = ["command-line-utilities"]
 clap = { version = "4.4", features = ["derive", "cargo"] }
 tokio = { version = "1.33", features = ["full"] }
 tokio-stream = "0.1"
-tokio-util = { version = "0.7", features = ["compat"] }
+tokio-util = { version = "0.7", features = ["compat", "io"] }
 futures-util = "0.3"
 thirtyfour = "0.32.0-rc.8"
 selenium-manager = { git = "https://github.com/SeleniumHQ/selenium", tag = "selenium-4.14.0" }
@@ -20,6 +20,7 @@ reqwest = { version = "0.11", default-features = false, features = ["rustls-tls-
 reqwest-partial-retry = "0.1"
 reqwest-retry = "0.3"
 reqwest-middleware = "0.2"
+async-speed-limit = "0.4"
 hyper = "1.0"
 serde_json = "1.0"
 bytes = "1.5"
@@ -39,6 +40,7 @@ enum_dispatch = "0.3"
 enum-iterator = "1.4"
 indicatif = { git = "https://github.com/Funami580/indicatif", rev = "ade6307c5557dee7924cea29b557d20ccf1ecc3d" }
 number_prefix = "0.4"
+byte-unit = { version = "5.1", features = [ "bit" ] }
 rust-lapper = "1.1"
 console = "0.15"
 bitmask-enum = "2.2"

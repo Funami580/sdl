@@ -87,7 +87,8 @@ async fn main() {
     }
 
     // Set up FFmpeg, and ChromeDriver if needed
-    let asset_downloader = Downloader::new(&mut log_wrapper, debug, None, None, None);
+    let limiter = async_speed_limit::Limiter::new(args.limit_rate);
+    let asset_downloader = Downloader::new(&mut log_wrapper, limiter, debug, None, None, None);
     let ffmpeg = Ffmpeg::new(data_dir.clone());
 
     let (mut chrome, ffmpeg_install_result) = if extractor.is_none() {
@@ -178,8 +179,10 @@ async fn do_after_chrome_driver(
         None => None,
     };
     let episodes_downloader = if !args.mpv {
+        let limiter = async_speed_limit::Limiter::new(args.limit_rate);
         Some(Downloader::new(
             &mut log_wrapper,
+            limiter,
             debug,
             Some(ffmpeg_path),
             user_agent,
