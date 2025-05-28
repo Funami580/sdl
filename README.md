@@ -1,8 +1,6 @@
 # sdl
 Download multiple episodes from streaming sites
 
-**Warning: This project has been only tested on Linux, and is generally not well tested.**
-
 ## Supported sites
 ### German
 * [AniWorld](https://aniworld.to)
@@ -70,6 +68,12 @@ If an episode has multiple languages, the general language preference is as foll
 * German Anime Website: GerDub > GerSub > EngSub > EngDub
 * German non-Anime Website: GerDub > GerSub > EngDub > EngSub
 
+### Prioritize specific extractors
+First try Filemoon, then Voe, and finally try every other possible extractor using the `*` fallback:
+```bash
+sdl -p filemoon,voe,* 'https://aniworld.to/anime/stream/yuruyuri-happy-go-lily/staffel-1/episode-1'
+```
+
 ### Downloading with extractor directly
 ```bash
 sdl -u 'https://streamtape.com/e/DXYPVBeKrpCkMwD'
@@ -94,11 +98,15 @@ Options:
           Only download specific episodes
   -s, --seasons <RANGES>
           Only download specific seasons
+  -p, --extractor-priorities <PRIORITIES>
+          Extractor priorities
   -u, --extractor[=<NAME>]
           Use underlying extractors directly
   -N, --concurrent-downloads <INF|NUMBER>
           Concurrent downloads [default: 5]
-  -r, --retries <INF|NUMBER>
+  -r, --limit-rate <RATE>
+          Maximum download rate in bytes per second, e.g. 50K or 4.2MiB
+  -R, --retries <INF|NUMBER>
           Number of download retries [default: 5]
       --ddos-wait-episodes <NEVER|NUMBER>
           Amount of requests before waiting [default: 4]
