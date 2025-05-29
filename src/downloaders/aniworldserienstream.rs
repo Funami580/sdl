@@ -17,7 +17,7 @@ use crate::downloaders::{Downloader, EpisodesRequest};
 use crate::extractors::{extract_video_url_with_extractor_from_url_unchecked, has_extractor_with_name_other_name};
 
 static URL_REGEX: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r#"(?i)^https?://(?:www\.)?(?:(aniworld)\.to/anime|(s)\.to/serie)/stream/([^/\s]+)(?:/(?:(?:staffel-([1-9][0-9]*)(?:/(?:episode-([1-9][0-9]*)/?)?)?)|(?:(filme)(?:/(?:film-([1-9][0-9]*)/?)?)?))?)?$"#)
+    Regex::new(r#"(?i)^https?://(?:www\.)?(?:(aniworld)\.to/anime|(s)\.to/serie|(serienstream)\.to/serie)/stream/([^/\s]+)(?:/(?:(?:staffel-([1-9][0-9]*)(?:/(?:episode-([1-9][0-9]*)/?)?)?)|(?:(filme)(?:/(?:film-([1-9][0-9]*)/?)?)?))?)?$"#)
         .unwrap()
 });
 
@@ -238,7 +238,24 @@ impl<'driver, 'url, F: FnMut() -> Duration> Scraper<'driver, 'url, F> {
                 let season = self.parsed_url.season.as_ref().map(|season| season.season).unwrap_or(1);
                 self.scrape_season(season, &episodes).await
             }
-            EpisodesRequest::Seasons(seasons) => self.scrape_seasons(&seasons).await,
+            EpisodesRequest::Seasons(seasons) => {
+                self.scrape_seasons(&seasons).await
+            }
+            EpisodesRequest::Combined { seasons, episodes } => {
+                if let AllOrSpecific::Specific(season_ranges) = seasons {
+                    for season_range in season_ranges {
+                        for season in season_range.clone() {
+                            self.scrape_season(season, &episodes).await?;
+                        }
+                    }
+                    Ok(())
+                } else {
+                    Err(anyhow::anyhow!("You can only specify ONE Season when also specifying episodes"))
+                }
+            }
+            EpisodesRequest::All { .. } => {
+                anyhow::bail!("AniWorld does not support All seasons and episodes");
+            }
         }
     }
 
