@@ -287,7 +287,7 @@ impl<F: FnMut() -> Duration> DownloadSettings<F> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum ExtractorMatch {
+pub enum ExtractorMatch {
     Name(String),
     Any,
 }
