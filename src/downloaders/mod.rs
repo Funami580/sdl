@@ -239,8 +239,10 @@ pub struct DownloadRequest {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EpisodesRequest {
     Unspecified,
+    All,
     Episodes(AllOrSpecific),
     Seasons(AllOrSpecific),
+    Combined { seasons: AllOrSpecific, episodes: AllOrSpecific },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
