@@ -17,7 +17,7 @@ use crate::downloaders::{Downloader, EpisodesRequest};
 use crate::extractors::{extract_video_url_with_extractor_from_url_unchecked, has_extractor_with_name_other_name};
 
 static URL_REGEX: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r#"(?i)^https?://(?:www\.)?(?:(aniworld)\.to/anime|(s)\.to/serie)/stream/([^/\s]+)(?:/(?:(?:staffel-([1-9][0-9]*)(?:/(?:episode-([1-9][0-9]*)/?)?)?)|(?:(filme)(?:/(?:film-([1-9][0-9]*)/?)?)?))?)?$"#)
+    Regex::new(r#"(?i)^https?://(?:www\.)?(?:(aniworld)\.to/anime|(s)\.to/serie|(serienstream)\.to/serie)/stream/([^/\s]+)(?:/(?:(?:staffel-([1-9][0-9]*)(?:/(?:episode-([1-9][0-9]*)/?)?)?)|(?:(filme)(?:/(?:film-([1-9][0-9]*)/?)?)?))?)?$"#)
         .unwrap()
 });
 
@@ -121,7 +121,9 @@ impl TryFrom<&str> for ParsedUrl {
         let site = if site.eq_ignore_ascii_case("aniworld") {
             Site::AniWorld
         } else if site.eq_ignore_ascii_case("s") {
-            Site::SerienStream
+            Site::SerienStreamShort
+        } else if site.eq_ignore_ascii_case("serienstream") {
+            Site::SerienStreamLong
         } else {
             anyhow::bail!("failed to parse site name");
         };
@@ -177,14 +179,16 @@ impl ParsedUrl {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Site {
     AniWorld,
-    SerienStream,
+    SerienStreamShort,
+    SerienStreamLong,
 }
 
 impl Site {
     fn get_base_url(&self) -> &'static str {
         match self {
             Site::AniWorld => "https://aniworld.to/anime/stream",
-            Site::SerienStream => "https://s.to/serie/stream",
+            Site::SerienStreamShort => "https://s.to/serie/stream",
+            Site::SerienStreamLong => "https://serienstream.to/serie/stream",
         }
     }
 }
@@ -366,7 +370,7 @@ impl<'driver, 'url, F: FnMut() -> Duration> Scraper<'driver, 'url, F> {
                     _ => Ordering::Equal,
                 });
             }
-            Site::SerienStream => {}
+            Site::SerienStreamShort | Site::SerienStreamLong => {}
         }
 
         video_type.convert_to_non_unspecified_video_types_with_data(supported_video_types_and_selector)
@@ -604,6 +608,10 @@ mod tests {
             "https://s.to/serie/stream/detektiv-conan/filme",
             "https://s.to/serie/stream/detektiv-conan/staffel-5",
             "https://s.to/serie/stream/detektiv-conan/staffel-1/episode-1",
+            "https://serienstream.to/serie/stream/detektiv-conan",
+            "https://serienstream.to/serie/stream/detektiv-conan/filme",
+            "https://serienstream.to/serie/stream/detektiv-conan/staffel-5",
+            "https://serienstream.to/serie/stream/detektiv-conan/staffel-1/episode-1",
         ];
 
         for url in is_supported {
@@ -632,7 +640,7 @@ mod tests {
 
         let url3 = "https://s.to/serie/stream/detektiv-conan/staffel-19/episode-20";
         let expected3 = ParsedUrl {
-            site: Site::SerienStream,
+            site: Site::SerienStreamShort,
             name: "detektiv-conan".to_string(),
             season: Some(ParsedUrlSeason {
                 season: 19,
@@ -642,7 +650,27 @@ mod tests {
 
         let url4 = "https://s.to/serie/stream/detektiv-conan/filme/film-3";
         let expected4 = ParsedUrl {
-            site: Site::SerienStream,
+            site: Site::SerienStreamShort,
+            name: "detektiv-conan".to_string(),
+            season: Some(ParsedUrlSeason {
+                season: 0,
+                episode: Some(3),
+            }),
+        };
+
+        let url5 = "https://serienstream.to/serie/stream/detektiv-conan/staffel-19/episode-20";
+        let expected5 = ParsedUrl {
+            site: Site::SerienStreamLong,
+            name: "detektiv-conan".to_string(),
+            season: Some(ParsedUrlSeason {
+                season: 19,
+                episode: Some(20),
+            }),
+        };
+
+        let url6 = "https://serienstream.to/serie/stream/detektiv-conan/filme/film-3";
+        let expected6 = ParsedUrl {
+            site: Site::SerienStreamLong,
             name: "detektiv-conan".to_string(),
             season: Some(ParsedUrlSeason {
                 season: 0,
@@ -655,6 +683,8 @@ mod tests {
             (url2, expected2),
             (url3, expected3),
             (url4, expected4),
+            (url5, expected5),
+            (url6, expected6),
         ];
 
         for (input, output) in tests {
