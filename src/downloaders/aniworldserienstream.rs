@@ -17,7 +17,7 @@ use crate::downloaders::{Downloader, EpisodesRequest};
 use crate::extractors::{extract_video_url_with_extractor_from_url_unchecked, has_extractor_with_name_other_name};
 
 static URL_REGEX: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r#"(?i)^https?://(?:www\.)?(?:(aniworld)\.to/anime|(s)\.to/serie)/stream/([^/\s]+)(?:/(?:(?:staffel-([1-9][0-9]*)(?:/(?:episode-([1-9][0-9]*)/?)?)?)|(?:(filme)(?:/(?:film-([1-9][0-9]*)/?)?)?))?)?$"#)
+    Regex::new(r#"(?i)^https?://(?:www\.)?(?:(aniworld)\.to/anime|(s)\.to/serie|(serienstream)\.to/serie)/stream/([^/\s]+)(?:/(?:(?:staffel-([1-9][0-9]*)(?:/(?:episode-([1-9][0-9]*)/?)?)?)|(?:(filme)(?:/(?:film-([1-9][0-9]*)/?)?)?))?)?$"#)
         .unwrap()
 });
 
