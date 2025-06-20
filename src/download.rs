@@ -353,7 +353,7 @@ impl Downloader {
 
         let input_stream = response
             .bytes_stream_resumable()
-            .map(|item| item.map_err(|err| std::io::Error::new(std::io::ErrorKind::Other, err)));
+            .map(|item| item.map_err(std::io::Error::other));
         let stream_reader = tokio_util::io::StreamReader::new(input_stream);
         let mut limited_stream = self.limiter.clone().limit(stream_reader.compat());
         let mut output_stream = tokio::io::BufWriter::new(target_file);
@@ -626,7 +626,7 @@ impl Downloader {
             };
             let input_stream = response
                 .bytes_stream_resumable()
-                .map(|item| item.map_err(|err| std::io::Error::new(std::io::ErrorKind::Other, err)));
+                .map(|item| item.map_err(std::io::Error::other));
             let stream_reader = tokio_util::io::StreamReader::new(input_stream);
             let mut limited_stream = self.limiter.clone().limit(stream_reader.compat());
             let mut decryptor = if let Some(encryption) = &current_encryption {
@@ -678,8 +678,8 @@ impl Downloader {
                             ProcessChunk::FlushLastChunkIfExists => true,
                         };
                         let current_chunk = match chunk {
-                            ProcessChunk::NewChunk(bytes) => std::mem::replace(last_chunk, Some(Box::from(bytes))),
-                            ProcessChunk::FlushLastChunkIfExists => std::mem::take(last_chunk),
+                            ProcessChunk::NewChunk(bytes) => last_chunk.replace(Box::from(bytes)),
+                            ProcessChunk::FlushLastChunkIfExists => last_chunk.take(),
                         };
 
                         if let Some(current_chunk) = current_chunk {
@@ -1338,7 +1338,7 @@ mod retry {
 
 fn is_m3u8_url(url: &Url) -> bool {
     url.path_segments()
-        .and_then(|segments| segments.last())
+        .and_then(|mut segments| segments.next_back())
         .map(|last| {
             let lower = last.to_ascii_lowercase();
             (lower.ends_with(".m3u8") && lower.len() != ".m3u8".len())

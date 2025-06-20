@@ -288,7 +288,7 @@ fn parse_extractor_priorities(input: &str) -> Result<Box<[ExtractorMatch]>, Stri
     while let Some(part) = parts.next() {
         if part == "*" {
             if parts.peek().is_some() {
-                return Err(format!("fallback extractor '*' can only be used at last position"));
+                return Err("fallback extractor '*' can only be used at last position".to_string());
             }
 
             out.push(ExtractorMatch::Any);
