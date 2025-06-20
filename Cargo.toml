@@ -40,7 +40,7 @@ enum_dispatch = "0.3"
 enum-iterator = "1.4"
 indicatif = { git = "https://github.com/Funami580/indicatif", rev = "ade6307c5557dee7924cea29b557d20ccf1ecc3d" }
 number_prefix = "0.4"
-byte-unit = { version = "5.1", features = [ "bit" ] }
+byte-unit = "5.1"
 rust-lapper = "1.1"
 console = "0.15"
 bitmask-enum = "2.2"

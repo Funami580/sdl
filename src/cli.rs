@@ -345,8 +345,9 @@ fn parse_rate_limit_as_f64(input: &str) -> Result<f64, String> {
         return Ok(f64::INFINITY);
     }
 
-    let bits = byte_unit::Bit::parse_str(input).map_err(|err| format!("{err}"))?;
-    let bytes = (bits.as_u64() as f64 / 8.0f64).max(0.0);
+    let bytes = byte_unit::Byte::parse_str(input, false)
+        .map_err(|err| format!("{err}"))?
+        .as_u64() as f64;
 
     if bytes <= 0.0 {
         return Err("rate limit must be greater than 0".to_string());
