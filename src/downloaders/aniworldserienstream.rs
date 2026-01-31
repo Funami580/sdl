@@ -17,7 +17,7 @@ use crate::downloaders::{Downloader, EpisodesRequest};
 use crate::extractors::{extract_video_url_with_extractor_from_url_unchecked, has_extractor_with_name_other_name};
 
 static URL_REGEX: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r#"(?i)^https?://(?:www\.)?(?:(aniworld)\.to/anime|(s)\.to/serie|(serienstream)\.to/serie)/stream/([^/\s]+)(?:/(?:(?:staffel-([1-9][0-9]*)(?:/(?:episode-([1-9][0-9]*)/?)?)?)|(?:(filme)(?:/(?:film-([1-9][0-9]*)/?)?)?))?)?$"#)
+    Regex::new(r#"(?i)^https?://(?:www\.)?(?:(aniworld)\.to/anime/stream|(s)\.to/serie|(serienstream)\.to/serie)/([^/\s]+)(?:/(?:(?:staffel-([0-9][0-9]*)(?:/(?:episode-([1-9][0-9]*)/?)?)?)|(?:(filme)(?:/(?:film-([1-9][0-9]*)/?)?)?))?)?$"#)
         .unwrap()
 });
 
@@ -44,7 +44,12 @@ impl InstantiatedDownloader for AniWorldSerienStream<'_> {
         let title = self
             .driver
             .execute(
-                r#"return document.querySelector(".series-title > h1 > span").innerText;"#,
+                match self.parsed_url.site {
+                    Site::AniWorld => r#"return document.querySelector(".series-title > h1 > span").innerText;"#,
+                    Site::SerienStreamShort | Site::SerienStreamLong => {
+                        r#"return document.querySelector("h1.fw-bold").innerText;"#
+                    }
+                },
                 vec![],
             )
             .await
@@ -55,12 +60,21 @@ impl InstantiatedDownloader for AniWorldSerienStream<'_> {
             .trim()
             .to_owned();
 
-        let description = if let Ok(element) = self.driver.find(By::Css("p[data-full-description]")).await {
-            element.attr("data-full-description").await.ok()
-        } else {
-            None
+        let description = match self.parsed_url.site {
+            Site::AniWorld => if let Ok(element) = self.driver.find(By::Css("p[data-full-description]")).await {
+                element.attr("data-full-description").await.ok()
+            } else {
+                None
+            }
+            .flatten(),
+            Site::SerienStreamShort | Site::SerienStreamLong => {
+                if let Ok(element) = self.driver.find(By::Css(".series-description .description-text")).await {
+                    element.text().await.ok()
+                } else {
+                    None
+                }
+            }
         }
-        .flatten()
         .and_then(|desc| {
             let trimmed_desc = desc.trim();
 
@@ -160,7 +174,7 @@ impl ParsedUrl {
     }
 
     fn get_season_url(&self, season: u32) -> String {
-        if season == 0 {
+        if season == 0 && self.season_zero_is_filme_url() {
             format!("{}/filme", self.get_series_url())
         } else {
             format!("{}/staffel-{}", self.get_series_url(), season)
@@ -168,10 +182,17 @@ impl ParsedUrl {
     }
 
     fn get_episode_url(&self, season: u32, episode: u32) -> String {
-        if season == 0 {
+        if season == 0 && self.season_zero_is_filme_url() {
             format!("{}/film-{}", self.get_season_url(season), episode)
         } else {
             format!("{}/episode-{}", self.get_season_url(season), episode)
+        }
+    }
+
+    fn season_zero_is_filme_url(&self) -> bool {
+        match self.site {
+            Site::AniWorld => true,
+            Site::SerienStreamShort | Site::SerienStreamLong => false,
         }
     }
 }
@@ -187,8 +208,8 @@ impl Site {
     fn get_base_url(&self) -> &'static str {
         match self {
             Site::AniWorld => "https://aniworld.to/anime/stream",
-            Site::SerienStreamShort => "https://s.to/serie/stream",
-            Site::SerienStreamLong => "https://serienstream.to/serie/stream",
+            Site::SerienStreamShort => "https://s.to/serie",
+            Site::SerienStreamLong => "https://serienstream.to/serie",
         }
     }
 }
@@ -336,28 +357,50 @@ impl<'driver, 'url, F: FnMut() -> Duration> Scraper<'driver, 'url, F> {
     }
 
     fn get_language_selectors(site: &Site, video_type: &VideoType) -> Option<Vec<(VideoType, By)>> {
-        let mut supported_video_types_and_selector = [
-            (
-                VideoType::Dub(Language::German),
-                By::Css(r#"div.changeLanguageBox > img[title="Deutsch"]"#),
-            ),
-            (
-                VideoType::Sub(Language::German),
-                By::Css(
-                    r#"div.changeLanguageBox > img[title*="Untertitel Deutsch"], div.changeLanguageBox > img[title*="deutschen Untertitel"]"#,
+        let mut supported_video_types_and_selector = match site {
+            Site::AniWorld => [
+                (
+                    VideoType::Dub(Language::German),
+                    By::Css(r#"div.changeLanguageBox > img[title="Deutsch"]"#),
                 ),
-            ),
-            (
-                VideoType::Dub(Language::English),
-                By::Css(r#"div.changeLanguageBox > img[title="Englisch"]"#),
-            ),
-            (
-                VideoType::Sub(Language::English),
-                By::Css(
-                    r#"div.changeLanguageBox > img[title*="Untertitel Englisch"], div.changeLanguageBox > img[title*="englischen Untertitel"]"#,
+                (
+                    VideoType::Sub(Language::German),
+                    By::Css(
+                        r#"div.changeLanguageBox > img[title*="Untertitel Deutsch"], div.changeLanguageBox > img[title*="deutschen Untertitel"]"#,
+                    ),
                 ),
-            ),
-        ];
+                (
+                    VideoType::Dub(Language::English),
+                    By::Css(r#"div.changeLanguageBox > img[title="Englisch"]"#),
+                ),
+                (
+                    VideoType::Sub(Language::English),
+                    By::Css(
+                        r#"div.changeLanguageBox > img[title*="Untertitel Englisch"], div.changeLanguageBox > img[title*="englischen Untertitel"]"#,
+                    ),
+                ),
+            ],
+            Site::SerienStreamShort | Site::SerienStreamLong => {
+                [
+                    (
+                        VideoType::Dub(Language::German),
+                        By::Css(r#"button.link-box[data-language-label="Deutsch"]"#),
+                    ),
+                    (
+                        VideoType::Sub(Language::German),
+                        By::Css(r#"button.link-box[data-language-label="Ger-Sub"]"#),
+                    ),
+                    (
+                        VideoType::Dub(Language::English),
+                        By::Css(r#"button.link-box[data-language-label="Englisch"]"#),
+                    ),
+                    (
+                        VideoType::Sub(Language::English),
+                        By::Css(r#"button.link-box[data-language-label="Eng-Sub"]"#), // TODO: this is just a guess
+                    ),
+                ]
+            }
+        };
 
         match site {
             Site::AniWorld => {
@@ -389,12 +432,11 @@ impl<'driver, 'url, F: FnMut() -> Duration> Scraper<'driver, 'url, F> {
     }
 
     async fn get_seasons_info(&self) -> Result<SeasonsInfo, anyhow::Error> {
-        let seasons = self
-            .driver
-            .query(By::Css("#stream > ul:first-of-type > li"))
-            .all_from_selector()
-            .await
-            .unwrap();
+        let seasons_selector = match self.parsed_url.site {
+            Site::AniWorld => By::Css("#stream > ul:first-of-type > li"),
+            Site::SerienStreamShort | Site::SerienStreamLong => By::Css("#season-nav > ul > li > a"),
+        };
+        let seasons = self.driver.query(seasons_selector).all_from_selector().await.unwrap();
         let mut has_movies = false;
         let mut max_season = None;
 
@@ -410,6 +452,10 @@ impl<'driver, 'url, F: FnMut() -> Duration> Scraper<'driver, 'url, F> {
             let Ok(number) = text.parse::<u32>() else {
                 continue;
             };
+
+            if number == 0 {
+                has_movies = true;
+            }
 
             max_season = match max_season {
                 Some(old_max) => Some(number.max(old_max)),
@@ -428,7 +474,11 @@ impl<'driver, 'url, F: FnMut() -> Duration> Scraper<'driver, 'url, F> {
     }
 
     async fn get_episode_info(&self, current_season: u32, current_episode: u32) -> Option<EpisodeInfo> {
-        let episode_title = if let Ok(element) = self.driver.find(By::Css(".episodeGermanTitle")).await {
+        let episode_title_selector = match self.parsed_url.site {
+            Site::AniWorld => By::Css(".episodeGermanTitle"),
+            Site::SerienStreamShort | Site::SerienStreamLong => By::Css("article > h2"),
+        };
+        let episode_title = if let Ok(element) = self.driver.find(episode_title_selector).await {
             element.text().await.ok().and_then(|title| {
                 let trimmed = title.trim();
 
@@ -442,12 +492,11 @@ impl<'driver, 'url, F: FnMut() -> Duration> Scraper<'driver, 'url, F> {
             None
         };
 
-        let episodes = self
-            .driver
-            .query(By::Css("li > a[data-episode-id]"))
-            .all_from_selector()
-            .await
-            .unwrap();
+        let episodes_selector = match self.parsed_url.site {
+            Site::AniWorld => By::Css("li > a[data-episode-id]"),
+            Site::SerienStreamShort | Site::SerienStreamLong => By::Css("#episode-nav > ul > li > a"),
+        };
+        let episodes = self.driver.query(episodes_selector).all_from_selector().await.unwrap();
         let mut max_episode = None;
 
         for episode in episodes {
@@ -486,12 +535,21 @@ impl<'driver, 'url, F: FnMut() -> Duration> Scraper<'driver, 'url, F> {
             .await
             .context("failed to find episode in requested language")?;
 
+        let lang_key_attr = match self.parsed_url.site {
+            Site::AniWorld => "data-lang-key",
+            Site::SerienStreamShort | Site::SerienStreamLong => "data-language-id",
+        };
         let lang_key = lang_element
-            .attr("data-lang-key")
+            .attr(lang_key_attr)
             .await
             .unwrap()
-            .context("failed to find data-lang-key")?;
-        let streams_selector = By::Css(&format!(r#".hosterSiteVideo ul li[data-lang-key="{}"]"#, lang_key));
+            .context("failed to find data-lang")?;
+        let streams_selector = match self.parsed_url.site {
+            Site::AniWorld => By::Css(&format!(r#".hosterSiteVideo ul li[data-lang-key="{}"]"#, lang_key)),
+            Site::SerienStreamShort | Site::SerienStreamLong => {
+                By::Css(&format!(r#"button.link-box[data-language-id="{}"]"#, lang_key))
+            }
+        };
         let available_streams = self.driver.query(streams_selector).all_from_selector().await.unwrap();
 
         if available_streams.is_empty() {
@@ -503,7 +561,11 @@ impl<'driver, 'url, F: FnMut() -> Duration> Scraper<'driver, 'url, F> {
         let mut stream_platform_name_and_redirect_link = Vec::with_capacity(available_streams.len());
 
         for stream in available_streams {
-            let Some(link_target) = stream.attr("data-link-target").await.unwrap() else {
+            let link_target_attr = match self.parsed_url.site {
+                Site::AniWorld => "data-link-target",
+                Site::SerienStreamShort | Site::SerienStreamLong => "data-play-url",
+            };
+            let Some(link_target) = stream.attr(link_target_attr).await.unwrap() else {
                 log::trace!("Failed to find data-link-target");
                 continue;
             };
@@ -513,18 +575,24 @@ impl<'driver, 'url, F: FnMut() -> Duration> Scraper<'driver, 'url, F> {
                 continue;
             };
 
-            let stream_platform_name = self
-                .driver
-                .execute(
-                    &format!(r#"return document.querySelector('.hosterSiteVideo ul li[data-lang-key="{}"][data-link-target="{}"] h4').innerText;"#, lang_key, link_target),
-                    vec![],
-                )
-                .await
-                .context("failed to get name of stream platform")?
-                .json()
-                .as_str().context("failed to get name of stream platform as string")?
-                .trim()
-                .to_owned();
+            let stream_platform_name = match self.parsed_url.site {
+                Site::AniWorld => {
+                    self.driver
+                        .execute(
+                            &format!(r#"return document.querySelector('.hosterSiteVideo ul li[data-lang-key="{}"][data-link-target="{}"] h4').innerText;"#, lang_key, link_target),
+                            vec![],
+                        )
+                        .await
+                        .context("failed to get name of stream platform")?
+                        .json()
+                        .as_str().context("failed to get name of stream platform as string")?
+                        .trim()
+                        .to_owned()
+                }
+                Site::SerienStreamShort | Site::SerienStreamLong => {
+                    stream.attr("data-provider-name").await.unwrap().context("failed to get name of stream platform")?
+                }
+            };
 
             stream_platform_name_and_redirect_link.push((stream_platform_name, redirect_link));
         }
@@ -604,14 +672,14 @@ mod tests {
             "https://aniworld.to/anime/stream/mushoku-tensei-jobless-reincarnation/filme",
             "https://aniworld.to/anime/stream/detektiv-conan/staffel-18/episode-2",
             "http://www.aniworld.to/anime/stream/mushoku-tensei-jobless-reincarnation/filme",
-            "https://s.to/serie/stream/detektiv-conan",
-            "https://s.to/serie/stream/detektiv-conan/filme",
-            "https://s.to/serie/stream/detektiv-conan/staffel-5",
-            "https://s.to/serie/stream/detektiv-conan/staffel-1/episode-1",
-            "https://serienstream.to/serie/stream/detektiv-conan",
-            "https://serienstream.to/serie/stream/detektiv-conan/filme",
-            "https://serienstream.to/serie/stream/detektiv-conan/staffel-5",
-            "https://serienstream.to/serie/stream/detektiv-conan/staffel-1/episode-1",
+            "https://s.to/serie/detektiv-conan",
+            "https://s.to/serie/detektiv-conan/staffel-0",
+            "https://s.to/serie/detektiv-conan/staffel-5",
+            "https://s.to/serie/detektiv-conan/staffel-1/episode-1",
+            "https://serienstream.to/serie/detektiv-conan",
+            "https://serienstream.to/serie/detektiv-conan/staffel-0",
+            "https://serienstream.to/serie/detektiv-conan/staffel-5",
+            "https://serienstream.to/serie/detektiv-conan/staffel-1/episode-1",
         ];
 
         for url in is_supported {
@@ -638,7 +706,7 @@ mod tests {
             }),
         };
 
-        let url3 = "https://s.to/serie/stream/detektiv-conan/staffel-19/episode-20";
+        let url3 = "https://s.to/serie/detektiv-conan/staffel-19/episode-20";
         let expected3 = ParsedUrl {
             site: Site::SerienStreamShort,
             name: "detektiv-conan".to_string(),
@@ -648,7 +716,7 @@ mod tests {
             }),
         };
 
-        let url4 = "https://s.to/serie/stream/detektiv-conan/filme/film-3";
+        let url4 = "https://s.to/serie/detektiv-conan/staffel-0/episode-3";
         let expected4 = ParsedUrl {
             site: Site::SerienStreamShort,
             name: "detektiv-conan".to_string(),
@@ -658,7 +726,7 @@ mod tests {
             }),
         };
 
-        let url5 = "https://serienstream.to/serie/stream/detektiv-conan/staffel-19/episode-20";
+        let url5 = "https://serienstream.to/serie/detektiv-conan/staffel-19/episode-20";
         let expected5 = ParsedUrl {
             site: Site::SerienStreamLong,
             name: "detektiv-conan".to_string(),
@@ -668,7 +736,7 @@ mod tests {
             }),
         };
 
-        let url6 = "https://serienstream.to/serie/stream/detektiv-conan/filme/film-3";
+        let url6 = "https://serienstream.to/serie/detektiv-conan/staffel-0/episode-3";
         let expected6 = ParsedUrl {
             site: Site::SerienStreamLong,
             name: "detektiv-conan".to_string(),
