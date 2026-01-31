@@ -66,7 +66,7 @@ impl<'a> ChromeDriver<'a> {
         caps.add_arg("window-size=1920,1080").unwrap();
         caps.add_arg("disable-infobars").unwrap();
         if headless {
-            caps.add_arg("--headless=new").unwrap();
+            caps.add_arg("--headless=old").unwrap();
             caps.add_arg("--log-level=3").unwrap();
             caps.add_exclude_switch("enable-logging").unwrap();
         }
@@ -161,7 +161,7 @@ impl<'a> ChromeDriver<'a> {
         match selenium_manager::chrome::ChromeManager::new() {
             Ok(mut manager) => {
                 let setup_result = tokio::task::spawn_blocking(move || {
-                    const CHROME_VERSION: usize = 116;
+                    const CHROME_VERSION: usize = 128;
 
                     manager.set_browser_version(CHROME_VERSION.to_string());
                     manager.discover_driver_version_and_download_browser_if_necessary()?;
